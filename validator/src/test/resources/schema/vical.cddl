@@ -1,0 +1,33 @@
+VICAL = {
+    "version" : tstr                ; VICAL structure version, currently "1.0"
+    "vicalProvider" : tstr          ; Identifies the VICAL provider
+    "date" : tdate                  ; date-time of VICAL issuance
+    ? "vicalIssueID" : uint         ; identifies the specific issue of the VICAL, shall be unique and monotonically increasing
+    ? "nextUpdate" : tdate          ; next VICAL is expected to be issued before this date-time
+    "certificateInfos" : [*CertificateInfo]
+    ? "extensions" : Extensions     ; Can be used for proprietary extensions
+    * tstr => any                   ; To be used for future extensions, all values are RFU
+}
+CertificateInfo = {
+    "certificate" : bstr            ; DER-encoded X.509 certificate
+    "serialNumber" : biguint        ; value of the  serial number field of the certificate
+    "ski" : bstr                    ; value of the Subject Key Identifier field of the certificate
+    "docType" : [+ DocType]         ; DocType for which the certificate may be used as a trust point
+    ? "certificateProfile" : [+ CertificateProfile] ; Type of certificate
+    ? "issuingAuthority" : tstr     ; Name of the certificate issuing authority
+    ? "issuingCountry" : tstr       ; ISO3166-1 or ISO3166-2 depending on the issuing authority
+    ? "stateOrProvinceName" : tstr  ; State or province name of the certificate issuing authority
+    ? "issuer" : bstr               ; DER-encoded Issuer field of the certificate (i.e. the complete Name structure)
+    ? "subject" : bstr              ; DER-encoded Subject field of the certificate (i.e. the complete Name structure)
+    ? "notBefore" : tdate           ; value of the notBefore field of the certificate
+    ? "notAfter" : tdate            ; value of the notAfter field of the certificate
+    ? "extensions" : Extensions     ; Can be used for proprietary extensions
+    * tstr => any                   ; To be used for future extensions, all values are RFU
+}
+Extensions = {* tstr => any}        ; Can be used for proprietary extensions
+CertificateProfile = tstr           ; Uniform Resource Name (URN) according to RFC 8141
+
+DocType = tstr
+NameSpace = tstr
+DataElementIdentifier = tstr    ; Data element identifier
+DataElementValue = any          ; Data element value

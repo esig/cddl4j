@@ -1,0 +1,64 @@
+# This repository adheres to the publiccode.yml standard by including this
+# metadata file that makes public software easily discoverable.
+# More info at https://github.com/italia/publiccode.yml
+
+publiccodeYmlVersion: "0.2.1"
+
+name: cddl4j
+applicationSuite: Digital Identity and Trust
+url: https://code.europa.eu/dit/cddl4j
+softwareVersion: "0.1.0"
+
+platforms:
+  - JVM
+  - windows
+  - linux
+  - mac
+
+categories:
+  - application-development
+  - it-development
+  - it-security
+
+organisation:
+  name: European Commission
+
+developmentStatus: beta
+softwareType: library
+
+intendedAudience:
+  scope:
+    - government
+    - infrastructures
+    - science-and-technology
+    - security
+
+description:
+  en:
+    localisedName: cddl4j
+    genericName: cddl4j Java CDDL and CBOR library
+    shortDescription: Java library for validating CBOR data against CDDL schemas and working with CBOR values.
+    longDescription: >
+      cddl4j is a Java 8 library for applications that exchange CBOR encoded binary data and need a schema-driven
+      validation layer. It parses RFC 8949 CBOR and RFC 8610 CDDL, compiles schemas into reusable immutable
+      validation models, and validates CBOR payloads. 
+      The project also includes a self-contained CBOR data model, decoder, encoder, deterministic encoding and
+      semantic-tag helpers.
+    features:
+      - Create and parse CBOR data model.
+      - Validate CBOR payloads against CDDL schemas.
+      - Extend schemas with application-defined rules and custom control operators.
+
+legal:
+  license: EUPL-1.2
+  mainCopyrightOwner: European Commission
+
+maintenance:
+  type: internal
+  contacts:
+    - name: Aleksandr Beliakov
+
+localisation:
+  localisationReady: false
+  availableLanguages:
+    - en
