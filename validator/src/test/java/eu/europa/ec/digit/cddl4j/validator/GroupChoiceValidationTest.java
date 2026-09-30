@@ -493,6 +493,210 @@ class GroupChoiceValidationTest {
         assertInvalid(schema, value);
     }
 
+    @Test
+    void mapKeysEnforcedGroup() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = {\n" +
+                        "    Generic_Headers,\n" +
+                        "    * label => values\n" +
+                        "}\n" +
+                        "Generic_Headers = (\n" +
+                        "    ? 1 ^=> int / tstr,  ; algorithm identifier\n" +
+                        "    ? 2 ^=> [+label],    ; criticality\n" +
+                        "    ? 3 ^=> tstr / int,  ; content type\n" +
+                        "    ? 4 ^=> bstr,        ; key identifier\n" +
+                        "    ? ( 5 ^=> bstr //    ; IV\n" +
+                        "        6 ^=> bstr )     ; Partial IV\n" +
+                        ")\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        CBORValue value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(256))
+                .value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.bytes(new byte[] { 0x00, 0x01, 0x02 } ))
+                .value();
+
+        assertInvalid(schema, value);
+    }
+    
+    @Test
+    void mapKeysGroupWithoutCutAllowsWildcardFallback() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Generic_Headers, * label => values }\n" +
+                        "Generic_Headers = (? 1 => int)\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.text("fallback"))
+                .value());
+    }
+
+    @Test
+    void mapKeysGroupMixedCutWithWildcardFallback() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Generic_Headers, * label => values }\n" +
+                        "Generic_Headers = (\n" +
+                        "    ? 1 => int,\n" +
+                        "    ? 2 : int\n" +
+                        ")\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(2))
+                .value());
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.text("2"))
+                .value());
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(2), CBOR.integer(2))
+                .value());
+
+        assertInvalid(schema, CBOR.map()
+                .put(CBOR.integer(2), CBOR.text("2"))
+                .value());
+    }
+
+    @Test
+    void mapKeysGroupMixedCutWithWildcardFallbackAndKeyRef() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Generic_Headers, * label => values }\n" +
+                        "Generic_Headers = (\n" +
+                        "    ? l_1 => int,\n" +
+                        "    ? l_2 ^=> int\n" +
+                        ")\n" +
+                        "l_1 = 1\n" +
+                        "l_2 = 2\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(2))
+                .value());
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.text("2"))
+                .value());
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(2), CBOR.integer(2))
+                .value());
+
+        assertInvalid(schema, CBOR.map()
+                .put(CBOR.integer(2), CBOR.text("2"))
+                .value());
+    }
+
+    @Test
+    void mapKeysGroupMixedImplicitCutWithBarewordKeyWildcardFallback() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Generic_Headers, * label => values }\n" +
+                        "Generic_Headers = (\n" +
+                        "    ? l_1 => int,\n" +
+                        "    ? l_2 : int\n" + // NOTE: This is considered as "l_2" as opposite to the test above
+                        ")\n" +
+                        "l_1 = 1\n" +
+                        "l_2 = 2\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(2))
+                .value());
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.text("2"))
+                .value());
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(2), CBOR.integer(2))
+                .value());
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(2), CBOR.text("2"))
+                .value());
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.text("l_2"), CBOR.integer(2))
+                .value());
+
+        assertInvalid(schema, CBOR.map()
+                .put(CBOR.integer(2), CBOR.text("2"))
+                .put(CBOR.text("l_2"), CBOR.text("2"))
+                .value());
+    }
+
+    @Test
+    void mapKeysEnforcedGroupPreservesCutThroughAlias() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Generic_Headers, * label => values }\n" +
+                        "Generic_Headers = Generic_Headers_New\n" +
+                        "Generic_Headers_New = (? 1 ^=> int)\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(256))
+                .value());
+        assertInvalid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.text("not-an-int"))
+                .value());
+    }
+
+    @Test
+    void mapKeysBareWordGroupEntryImpliesCut() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Headers, * label => values }\n" +
+                        "Headers = (? algorithm: int)\n" +
+                        "label = tstr\n" +
+                        "values = any");
+
+         assertValid(schema, CBOR.map()
+                 .put(CBOR.text("algorithm"), CBOR.integer(256))
+                 .value());
+        assertInvalid(schema, CBOR.map()
+                .put(CBOR.text("algorithm"), CBOR.text("not-an-int"))
+                .value());
+    }
+
+    @Test
+    void mapKeysImplicitGroup() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = {\n" +
+                        "    Generic_Headers,\n" +
+                        "    * label => values\n" +
+                        "}\n" +
+                        "Generic_Headers = (\n" +
+                        "    ? 1 : int / tstr,  ; algorithm identifier\n" +
+                        "    ? 2 : [+label],    ; criticality\n" +
+                        "    ? 3 : tstr / int,  ; content type\n" +
+                        "    ? 4 : bstr,        ; key identifier\n" +
+                        "    ? ( 5 : bstr //    ; IV\n" +
+                        "        6 : bstr )     ; Partial IV\n" +
+                        ")\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        CBORValue value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(256))
+                .value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.bytes(new byte[] { 0x00, 0x01, 0x02 } ))
+                .value();
+
+        assertInvalid(schema, value);
+    }
+
     private static void assertValid(CddlSchema schema, CBORValue value) {
         ValidationResult result = schema.validate(value);
         assertTrue(result.isValid(), "Expected valid CBOR value, but validation failed: " + result);

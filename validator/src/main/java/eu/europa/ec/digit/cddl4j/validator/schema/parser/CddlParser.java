@@ -513,31 +513,38 @@ public final class CddlParser {
         int min = occurrence[0];
         int max = occurrence[1];
 
+        if (peek().is(TokenType.LPAREN)) {
+            return GroupEntry.value(parseGroup(), min, max);
+        }
+
         if (peek().is(TokenType.IDENT) && peekAt(1).is(TokenType.COLON)) {
             String key = advance().getValue();
             advance();
-            return GroupEntry.bareWord(key, parseType(), min, max);
+            return GroupEntry.bareWord(key, parseType(), min, max, true);
         }
 
         if (peek().is(TokenType.TEXT) && peekAt(1).is(TokenType.COLON)) {
             String key = advance().getValue();
             advance();
-            return GroupEntry.bareWord(key, parseType(), min, max);
+            return GroupEntry.bareWord(key, parseType(), min, max, true);
         }
 
         CddlType keyType = parseType1();
 
+        boolean cut = false;
+        if (peek().is(TokenType.CARET)) {
+            advance();
+            cut = true;
+        }
+
         if (peek().is(TokenType.FAT_ARROW)) {
             advance();
-            return GroupEntry.typed(keyType, parseType(), min, max);
+            return GroupEntry.typed(keyType, parseType(), min, max, cut);
         }
 
         if (peek().is(TokenType.COLON)) {
             advance();
-            if (keyType instanceof ReferenceType) {
-                return GroupEntry.bareWord(((ReferenceType) keyType).getRuleName(), parseType(), min, max);
-            }
-            throw new CddlParseException("Expected a bare-word key before ':'", peek().getLine(), peek().getColumn());
+            return GroupEntry.typed(keyType, parseType(), min, max, true);
         }
 
         return GroupEntry.value(keyType, min, max);
@@ -697,7 +704,7 @@ public final class CddlParser {
             if (keyType instanceof ReferenceType) {
                 return MapEntry.bareWord(((ReferenceType) keyType).getRuleName(), valueType, min, max);
             }
-            return MapEntry.typed(keyType, valueType, min, max);
+            return MapEntry.typed(keyType, valueType, min, max, true);
         }
 
         throw new CddlParseException("Expected '=>' or ':' after map key type",

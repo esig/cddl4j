@@ -139,7 +139,7 @@ final class GroupExpansion {
         if (upper < min) {
             return Collections.emptyList();
         }
-        List<List<GroupEntry>> one = expandReferencedGroupForMap(name, referenced, ctx, expanding, maxOccurrences);
+        List<List<GroupEntry>> one = expandReferencedMapGroup(name, referenced, ctx, expanding, maxOccurrences);
         if (one.isEmpty()) {
             return min == 0 ? Collections.singletonList(new ArrayList<>()) : Collections.emptyList();
         }
@@ -160,9 +160,9 @@ final class GroupExpansion {
         return result;
     }
 
-    private static List<List<GroupEntry>> expandReferencedGroupForMap(String name, CddlType referenced,
-                                                           ValidationContext ctx, Set<String> expanding,
-                                                           int maxOccurrences) {
+    private static List<List<GroupEntry>> expandReferencedMapGroup(String name, CddlType referenced,
+                                                                   ValidationContext ctx, Set<String> expanding,
+                                                                   int maxOccurrences) {
         if (name != null && !expanding.add(name)) {
             throw new CddlParseException("Recursive group reference: '" + name + "'");
         }

@@ -163,9 +163,8 @@ public final class ArrayType extends CddlType {
                                                 ValidationContext ctx, Set<MatchState> active,
                                                 List<ValidationError> errors) {
         String groupName = groupName(entry);
-        CddlType group = entry.isGroupReference()
-                ? GroupExpansion.resolveGroup(ctx.resolveRule(groupName), ctx)
-                : GroupExpansion.resolveGroup(entry.getType(), ctx);
+        CddlType groupResolved = entry.isGroupReference() ? ctx.resolveRule(groupName) : entry.getType();
+        CddlType group = GroupExpansion.resolveGroup(groupResolved, ctx);
         if (group == null) {
             throw new CddlParseException("Rule '" + groupName + "' is not a CDDL group");
         }

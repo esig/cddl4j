@@ -1169,6 +1169,22 @@ class MapValidationTest {
                 .flatMap(error -> java.util.stream.Stream.concat(java.util.stream.Stream.of(error), error.getCauses().stream()))
                 .anyMatch(error -> "/a/b~c".equals(error.getInstancePath())), result.getErrors().toString());
     }
+    
+    @Test
+    void typedLiteralKeyColonHasImplicitCut() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "root = { ? 1 : int, * label => values }\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(42))
+                .value());
+
+        assertInvalid(schema, CBOR.map()
+                .put(CBOR.integer(1), CBOR.bytes(new byte[] {0x00}))
+                .value());
+        }
 
     private static void assertValid(CddlSchema schema, CBORValue value) {
         ValidationResult result = schema.validate(value);
