@@ -19,6 +19,7 @@ package eu.europa.ec.digit.cddl4j.validator.validation;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Describes a single constraint violation found during CBOR/CDDL validation.
@@ -136,6 +137,24 @@ public final class ValidationError {
             sb.append('\n');
             cause.appendTo(sb, indent + 1);
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+
+        ValidationError that = (ValidationError) o;
+        return Objects.equals(instancePath, that.instancePath)
+                && Objects.equals(message, that.message)
+                && Objects.equals(causes, that.causes);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Objects.hashCode(instancePath);
+        result = 31 * result + Objects.hashCode(message);
+        result = 31 * result + Objects.hashCode(causes);
+        return result;
     }
 
 }
