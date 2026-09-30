@@ -604,6 +604,145 @@ class GroupValidatorTest {
     }
 
     @Test
+    void arrayExpandsGroupReferenceTransitive() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "Test = [ Headers, payload : bstr, signature : bstr ]\n"
+                        + "Headers = Headers_New\n"
+                        + "Headers_New = (\n"
+                        + "    protected : bstr,\n"
+                        + "    unprotected : bstr\n"
+                        + ")");
+
+        CBORValue value = CBOR.array()
+                .add(CBOR.value(new byte[] {1})) // Headers.protected
+                .add(CBOR.value(new byte[] {2})) // Headers.unprotected
+                .add(CBOR.value(new byte[] {3})) // payload
+                .add(CBOR.value(new byte[] {4})) // signature
+                .value();
+
+        assertValid(schema, value);
+    }
+
+    @Test
+    void arrayExpandsGroupReferenceTransitiveInvalid() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "Test = [ Headers, payload : bstr, signature : bstr ]\n"
+                        + "Headers = Headers_New\n"
+                        + "Headers_New = (\n"
+                        + "    protected : bstr,\n"
+                        + "    unprotected : bstr\n"
+                        + ")");
+
+        CBORValue value = CBOR.array()
+                .add(CBOR.value("String")) // Headers.protected
+                .add(CBOR.value(new byte[] {2})) // Headers.unprotected
+                .add(CBOR.value(new byte[] {3})) // payload
+                .add(CBOR.value(new byte[] {4})) // signature
+                .value();
+
+        assertInvalid(schema, value);
+    }
+
+    @Test
+    void arrayMatchesRepeatedTransitiveGroupReference() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "Test = [ * Headers, payload : bstr ]\n"
+                        + "Headers = Headers_New\n"
+                        + "Headers_New = (\n"
+                        + "    protected : bstr,\n"
+                        + "    unprotected : bstr\n"
+                        + ")");
+
+        CBORValue value = CBOR.array()
+                .add(CBOR.value(new byte[] {1}))
+                .add(CBOR.value(new byte[] {2}))
+                .add(CBOR.value(new byte[] {3}))
+                .add(CBOR.value(new byte[] {4}))
+                .add(CBOR.value(new byte[] {5}))
+                .value();
+
+        assertValid(schema, value);
+    }
+
+    @Test
+    void arrayKeepsTransitiveTypeReferenceAsValue() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "Test = [ payload : Payload ]\n"
+                        + "Payload = Payload_New\n"
+                        + "Payload_New = bstr");
+
+        assertValid(schema, CBOR.array()
+                .add(CBOR.value(new byte[] {1}))
+                .value());
+
+        assertInvalid(schema, CBOR.array()
+                .add(CBOR.integer(1))
+                .value());
+    }
+
+    @Test
+    void mapExpandsTransitiveGroupReference() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Headers }\n"
+                        + "Headers = Headers_New\n"
+                        + "Headers_New = ( protected : bstr, unprotected : bstr )");
+
+        CBORValue value = CBOR.map()
+                .put(CBOR.text("protected"), CBOR.value(new byte[] {1}))
+                .put(CBOR.text("unprotected"), CBOR.value(new byte[] {2}))
+                .value();
+
+        assertValid(schema, value);
+    }
+
+    @Test
+    void mapExpandsTransitiveGroupReferenceInvalid() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Headers }\n"
+                        + "Headers = Headers_New\n"
+                        + "Headers_New = ( protected : bstr, unprotected : bstr )");
+
+        CBORValue value = CBOR.map()
+                .put(CBOR.text("protected"), CBOR.value("1"))
+                .put(CBOR.text("unprotected"), CBOR.value(new byte[] {2}))
+                .value();
+
+        assertInvalid(schema, value);
+    }
+
+    @Test
+    void mapExpandsMultipleTransitiveGroupReference() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Headers }\n"
+                        + "Headers = Headers_New\n"
+                        + "Headers_New = Headers_New_2\n"
+                        + "Headers_New_2 = ( protected : bstr, unprotected : bstr )");
+
+        CBORValue value = CBOR.map()
+                .put(CBOR.text("protected"), CBOR.value(new byte[] {1}))
+                .put(CBOR.text("unprotected"), CBOR.value(new byte[] {2}))
+                .value();
+
+        assertValid(schema, value);
+    }
+
+    @Test
+    void mapExpandsMultipleTransitiveGroupReferenceInvalid() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Headers }\n"
+                        + "Headers = Headers_New\n"
+                        + "Headers_New = Headers_New_2\n"
+                        + "Headers_New_2 = ( protected : bstr, unprotected : bstr )");
+
+        CBORValue value = CBOR.map()
+                .put(CBOR.text("protected"), CBOR.value("1"))
+                .put(CBOR.text("unprotected"), CBOR.value(new byte[] {2}))
+                .value();
+
+        assertInvalid(schema, value);
+    }
+
+    @Test
     void coseHeadersAcceptAdditionalIntegerHeader() {
         CddlSchema schema = CddlValidator.loadSchema(
                 "Test = [\n"

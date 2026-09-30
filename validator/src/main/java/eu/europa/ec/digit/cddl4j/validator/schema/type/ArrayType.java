@@ -163,10 +163,10 @@ public final class ArrayType extends CddlType {
                                                 ValidationContext ctx, Set<MatchState> active,
                                                 List<ValidationError> errors) {
         String groupName = groupName(entry);
-        CddlType group = entry.getType() instanceof GroupType || entry.getType() instanceof GroupChoiceType
-                ? entry.getType()
-                : ctx.resolveRule(groupName);
-        if (!(group instanceof GroupType) && !(group instanceof GroupChoiceType)) {
+        CddlType group = entry.isGroupReference()
+                ? GroupExpansion.resolveGroup(ctx.resolveRule(groupName), ctx)
+                : GroupExpansion.resolveGroup(entry.getType(), ctx);
+        if (group == null) {
             throw new CddlParseException("Rule '" + groupName + "' is not a CDDL group");
         }
 
@@ -194,15 +194,10 @@ public final class ArrayType extends CddlType {
     }
 
     private boolean isGroupReference(GroupEntry entry, ValidationContext ctx) {
-        if (entry.isGroupReference() || entry.getType() instanceof GroupType
-                || entry.getType() instanceof GroupChoiceType) {
+        if (entry.isGroupReference()) {
             return true;
         }
-        if (entry.hasKey() || !(entry.getType() instanceof ReferenceType)) {
-            return false;
-        }
-        CddlType target = ctx.resolveRule(((ReferenceType) entry.getType()).getRuleName());
-        return target instanceof GroupType || target instanceof GroupChoiceType;
+        return !entry.hasKey() && GroupExpansion.resolveGroup(entry.getType(), ctx) != null;
     }
 
     private String groupName(GroupEntry entry) {

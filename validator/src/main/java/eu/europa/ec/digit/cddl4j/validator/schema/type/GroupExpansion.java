@@ -170,14 +170,12 @@ final class GroupExpansion {
             if (referenced instanceof GroupType) {
                 return expandMapEntries(((GroupType) referenced).getEntries(), ctx, expanding, maxOccurrences);
             }
-            if (referenced instanceof GroupChoiceType) {
-                List<List<GroupEntry>> result = new ArrayList<>();
-                for (GroupType alternative : ((GroupChoiceType) referenced).getAlternatives()) {
-                    result.addAll(expandMapEntries(alternative.getEntries(), ctx, expanding, maxOccurrences));
-                }
-                return result;
+            List<List<GroupEntry>> result = new ArrayList<>();
+            for (GroupType alternative : ((GroupChoiceType) referenced).getAlternatives()) {
+                result.addAll(expandMapEntries(alternative.getEntries(), ctx, expanding, maxOccurrences));
             }
-            throw new CddlParseException("Expected a CDDL group but found " + referenced);
+            return result;
+
         } finally {
             if (name != null) {
                 expanding.remove(name);
@@ -187,40 +185,69 @@ final class GroupExpansion {
 
     private static List<List<GroupEntry>> expandReferencedGroup(String name, CddlType referenced,
                                                                 ValidationContext ctx, Set<String> expanding) {
-        if (!expanding.add(name)) {
+        if (name != null && !expanding.add(name)) {
             throw new CddlParseException("Recursive group reference: '" + name + "'");
         }
         try {
             return expand(referenced, ctx, expanding);
         } finally {
-            expanding.remove(name);
+            if (name != null) {
+                expanding.remove(name);
+            }
         }
     }
 
     private static CddlType referencedGroup(GroupEntry entry, ValidationContext ctx) {
         if (entry.isGroupReference()) {
-            CddlType target = ctx.resolveRule(entry.getGroupReference());
+            CddlType target = resolveGroupReference(entry.getGroupReference(), ctx, new HashSet<>());
             if (target == null && entry.getGroupReference().startsWith("$$")) {
                 return new GroupChoiceType(Collections.emptyList());
             }
-            if (!(target instanceof GroupType) && !(target instanceof GroupChoiceType)) {
+            if (target == null) {
                 throw new CddlParseException("Rule '" + entry.getGroupReference() + "' is not a CDDL group");
             }
             return target;
         }
 
-        if (!entry.hasKey()) {
-            if (entry.getType() instanceof GroupType || entry.getType() instanceof GroupChoiceType) {
-                return entry.getType();
-            }
-        }
-        if (entry.getType() instanceof ReferenceType) {
-            String name = ((ReferenceType) entry.getType()).getRuleName();
-            CddlType target = ctx.resolveRule(name);
-            return target instanceof GroupType || target instanceof GroupChoiceType ? target : null;
-        }
-        return null;
+        return entry.hasKey() ? null : resolveGroup(entry.getType(), ctx);
     }
+
+    /**
+     * Resolves the group represented by a CDDL type, following type aliases.
+     *
+     * @param type type to resolve
+     * @param ctx validation context used to resolve named rules
+     * @return the resolved group, or {@code null} when the type is not a group
+     * @throws CddlParseException if a group alias cycle is encountered
+     */
+    static CddlType resolveGroup(CddlType type, ValidationContext ctx) {
+        if (type instanceof GroupType || type instanceof GroupChoiceType) {
+            return type;
+        }
+        if (!(type instanceof ReferenceType)) {
+            return null;
+        }
+        return resolveGroupReference(((ReferenceType) type).getRuleName(), ctx, new HashSet<>());
+    }
+
+    private static CddlType resolveGroupReference(String ruleName, ValidationContext ctx, Set<String> resolving) {
+        if (!resolving.add(ruleName)) {
+            throw new CddlParseException("Recursive group reference: '" + ruleName + "'");
+        }
+        try {
+            CddlType target = ctx.resolveRule(ruleName);
+            if (target instanceof GroupType || target instanceof GroupChoiceType) {
+                return target;
+            }
+            if (target instanceof ReferenceType) {
+                return resolveGroupReference(((ReferenceType) target).getRuleName(), ctx, resolving);
+            }
+            return null;
+        } finally {
+            resolving.remove(ruleName);
+        }
+    }
+
 
     private static String groupName(GroupEntry entry) {
         if (entry.isGroupReference()) {
