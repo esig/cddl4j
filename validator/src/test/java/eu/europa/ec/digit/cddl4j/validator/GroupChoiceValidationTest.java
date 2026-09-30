@@ -422,6 +422,77 @@ class GroupChoiceValidationTest {
         assertInvalid(schema, value);
     }
 
+    @Test
+    void mapKeysGroup() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = {\n" +
+                        "    Generic_Headers,\n" +
+                        "    * label => values\n" +
+                        "}\n" +
+                        "Generic_Headers = (\n" +
+                        "    ? 1 => int / tstr,  ; algorithm identifier\n" +
+                        "    ? 2 => [+label],    ; criticality\n" +
+                        "    ? 3 => tstr / int,  ; content type\n" +
+                        "    ? 4 => bstr,        ; key identifier\n" +
+                        "    ? ( 5 => bstr //    ; IV\n" +
+                        "        6 => bstr )     ; Partial IV\n" +
+                        ")");
+
+        CBORValue value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(256))
+                .value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.text("256"))
+                .value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.integer(256))
+                .put(CBOR.integer(4), CBOR.bytes(new byte[] { 0x00, 0x01, 0x02 } ))
+                .value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(5), CBOR.bytes(new byte[] { 0x00, 0x01, 0x02 } ))
+                .value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(6), CBOR.bytes(new byte[] { 0x00, 0x01, 0x03 } ))
+                .value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map().value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.bytes(new byte[] { 0x00, 0x01, 0x02 } ))
+                .value();
+
+        assertInvalid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(5), CBOR.integer(1))
+                .value();
+
+        assertInvalid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(5), CBOR.bytes(new byte[] { 0x00, 0x01, 0x02 } ))
+                .put(CBOR.integer(6), CBOR.bytes(new byte[] { 0x00, 0x01, 0x03 } ))
+                .value();
+
+        assertInvalid(schema, value);
+    }
+
     private static void assertValid(CddlSchema schema, CBORValue value) {
         ValidationResult result = schema.validate(value);
         assertTrue(result.isValid(), "Expected valid CBOR value, but validation failed: " + result);

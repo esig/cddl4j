@@ -139,7 +139,7 @@ final class GroupExpansion {
         if (upper < min) {
             return Collections.emptyList();
         }
-        List<List<GroupEntry>> one = expandReferencedGroup(name, referenced, ctx, expanding);
+        List<List<GroupEntry>> one = expandReferencedGroupForMap(name, referenced, ctx, expanding, maxOccurrences);
         if (one.isEmpty()) {
             return min == 0 ? Collections.singletonList(new ArrayList<>()) : Collections.emptyList();
         }
@@ -158,6 +158,31 @@ final class GroupExpansion {
             }
         }
         return result;
+    }
+
+    private static List<List<GroupEntry>> expandReferencedGroupForMap(String name, CddlType referenced,
+                                                           ValidationContext ctx, Set<String> expanding,
+                                                           int maxOccurrences) {
+        if (name != null && !expanding.add(name)) {
+            throw new CddlParseException("Recursive group reference: '" + name + "'");
+        }
+        try {
+            if (referenced instanceof GroupType) {
+                return expandMapEntries(((GroupType) referenced).getEntries(), ctx, expanding, maxOccurrences);
+            }
+            if (referenced instanceof GroupChoiceType) {
+                List<List<GroupEntry>> result = new ArrayList<>();
+                for (GroupType alternative : ((GroupChoiceType) referenced).getAlternatives()) {
+                    result.addAll(expandMapEntries(alternative.getEntries(), ctx, expanding, maxOccurrences));
+                }
+                return result;
+            }
+            throw new CddlParseException("Expected a CDDL group but found " + referenced);
+        } finally {
+            if (name != null) {
+                expanding.remove(name);
+            }
+        }
     }
 
     private static List<List<GroupEntry>> expandReferencedGroup(String name, CddlType referenced,
@@ -184,7 +209,12 @@ final class GroupExpansion {
             return target;
         }
 
-        if (!entry.hasKey() && entry.getType() instanceof ReferenceType) {
+        if (!entry.hasKey()) {
+            if (entry.getType() instanceof GroupType || entry.getType() instanceof GroupChoiceType) {
+                return entry.getType();
+            }
+        }
+        if (entry.getType() instanceof ReferenceType) {
             String name = ((ReferenceType) entry.getType()).getRuleName();
             CddlType target = ctx.resolveRule(name);
             return target instanceof GroupType || target instanceof GroupChoiceType ? target : null;
@@ -193,7 +223,10 @@ final class GroupExpansion {
     }
 
     private static String groupName(GroupEntry entry) {
-        return entry.isGroupReference() ? entry.getGroupReference() : ((ReferenceType) entry.getType()).getRuleName();
+        if (entry.isGroupReference()) {
+            return entry.getGroupReference();
+        }
+        return entry.getType() instanceof ReferenceType ? ((ReferenceType) entry.getType()).getRuleName() : null;
     }
 
     private static void append(List<List<GroupEntry>> alternatives, GroupEntry entry) {
