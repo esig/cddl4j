@@ -92,17 +92,33 @@ public final class ValidationContext {
     }
 
     /**
-     * Creates a child context for a nested array element or map value.
+     * Creates a child context for a nested element or map value.
      *
      * <p>The supplied segment is appended to the current instance path using
      * a slash separator. If the current path is empty, the resulting path
      * starts with {@code /}.
      *
-     * @param segment the array index or map key identifying the child value
+     * @param segment map key identifying the child value
      * @return a new validation context with the child instance path
      */
     public ValidationContext child(String segment) {
         String newPath = instancePath.isEmpty() ? "/" + segment : instancePath + "/" + segment;
+        return new ValidationContext(ruleSet, controlOperators, newPath, recursionGuard);
+    }
+
+    /**
+     * Creates a child context for a nested array element.
+     *
+     * <p>The supplied segment is appended to the current instance path using
+     * square brackets. If the current path is empty, the resulting path
+     * starts with {@code /}.
+     *
+     * @param segment the array index identifying the child value
+     * @return a new validation context with the child instance path
+     */
+    public ValidationContext item(String segment) {
+        String item = "[" + segment + "]";
+        String newPath = instancePath.isEmpty() ? "/" + item : instancePath + item;
         return new ValidationContext(ruleSet, controlOperators, newPath, recursionGuard);
     }
 

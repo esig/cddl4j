@@ -63,12 +63,12 @@ class VicalTest {
         assertTrue(errorMessages.contains("[/version] Expected tstr (text string) but got int (integer)"));
         assertTrue(errorMessages.contains("[/date] Expected tagged value (#6.0) but got untagged tstr (text string)"));
         assertTrue(errorMessages.contains("[/nextUpdate] Expected tagged value (#6.0) but got untagged tstr (text string)"));
-        assertTrue(errorMessages.contains("[/certificateInfos/0/serialNumber] Expected tagged value (#6.2) but got untagged tstr (text string)"));
-        assertTrue(errorMessages.contains("[/certificateInfos/0/ski] Expected bstr (byte string) but got tstr (text string)"));
-        assertTrue(errorMessages.contains("[/certificateInfos/0/issuer] Expected bstr (byte string) but got tstr (text string)"));
-        assertTrue(errorMessages.contains("[/certificateInfos/0/subject] Expected bstr (byte string) but got tstr (text string)"));
-        assertTrue(errorMessages.contains("[/certificateInfos/0/notBefore] Expected tagged value (#6.0) but got untagged tstr (text string)"));
-        assertTrue(errorMessages.contains("[/certificateInfos/0/notAfter] Expected tagged value (#6.0) but got untagged tstr (text string)"));
+        assertTrue(errorMessages.contains("[/certificateInfos[0]/serialNumber] Expected tagged value (#6.2) but got untagged tstr (text string)"));
+        assertTrue(errorMessages.contains("[/certificateInfos[0]/ski] Expected bstr (byte string) but got tstr (text string)"));
+        assertTrue(errorMessages.contains("[/certificateInfos[0]/issuer] Expected bstr (byte string) but got tstr (text string)"));
+        assertTrue(errorMessages.contains("[/certificateInfos[0]/subject] Expected bstr (byte string) but got tstr (text string)"));
+        assertTrue(errorMessages.contains("[/certificateInfos[0]/notBefore] Expected tagged value (#6.0) but got untagged tstr (text string)"));
+        assertTrue(errorMessages.contains("[/certificateInfos[0]/notAfter] Expected tagged value (#6.0) but got untagged tstr (text string)"));
     }
 
     @Test

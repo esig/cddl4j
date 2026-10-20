@@ -647,7 +647,7 @@ class ArrayValidationTest {
 
         assertFalse(result.isValid());
         assertTrue(result.getErrors().stream()
-                .anyMatch(error -> "/items/0/tags/1".equals(error.getInstancePath())));
+                .anyMatch(error -> "/items[0]/tags[1]".equals(error.getInstancePath())));
     }
 
     @Test

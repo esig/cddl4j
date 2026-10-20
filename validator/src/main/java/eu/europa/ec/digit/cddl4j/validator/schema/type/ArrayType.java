@@ -144,7 +144,7 @@ public final class ArrayType extends CddlType {
                     continue;
                 }
                 ValidationResult validation = entry.getType().validate(
-                        value.get(index.intValue()), ctx.child(String.valueOf(index)));
+                        value.get(index.intValue()), ctx.item(String.valueOf(index)));
                 if (validation.isValid()) {
                     next.add(index + 1);
                 } else {
