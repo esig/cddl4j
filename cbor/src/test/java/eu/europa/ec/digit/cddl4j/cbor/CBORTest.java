@@ -145,6 +145,42 @@ class CBORTest {
     }
 
     @Test
+    void rejectsAssignedAndReservedSimpleValueNumbers() {
+        for (int value = 20; value <= 31; value++) {
+            final int simpleValue = value;
+            assertThrows(IllegalArgumentException.class, () -> CBOR.simpleValue(simpleValue));
+        }
+    }
+
+    @Test
+    void roundTripsPermittedSimpleValueNumbers() throws CBORDecodeException {
+        for (int value : new int[] {0, 19, 32, 255}) {
+            CBORValue simpleValue = CBOR.simpleValue(value);
+            assertEquals(simpleValue, CBOR.decodeFromBytes(simpleValue.encodeToBytes()));
+        }
+    }
+
+    @Test
+    void rejectsExcessivelyNestedValuesWithCheckedDecodeFailure() {
+        byte[] nestedArrays = new byte[258];
+        for (int i = 0; i < 257; i++) {
+            nestedArrays[i] = (byte) 0x81;
+        }
+        nestedArrays[257] = 0x00;
+
+        CBORDecodeException exception = assertThrows(CBORDecodeException.class,
+                () -> CBOR.decodeFromBytes(nestedArrays));
+
+        assertTrue(exception.getMessage().contains("nesting depth"));
+    }
+
+    @Test
+    void rejectsSimpleValuesOutsideByteRange() {
+        assertThrows(IllegalArgumentException.class, () -> CBOR.simpleValue(-1));
+        assertThrows(IllegalArgumentException.class, () -> CBOR.simpleValue(256));
+    }
+
+    @Test
     void rejectsInvalidUtf8() {
         CBORDecodeException exception = assertThrows(CBORDecodeException.class, () ->
                 CBOR.decodeFromBytes(new byte[] { 0x62, (byte) 0xc3, 0x28 }));

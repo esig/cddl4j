@@ -214,17 +214,20 @@ public final class CBOR {
      * Creates a CBOR simple value.
      *
      * <p>The value must be in the CBOR simple-value range {@code 0..255}.
-     * Values 20 through 23 should normally be created using the dedicated
-     * boolean, null, and undefined methods.
+     * Values 20 through 31 are assigned to other CBOR meanings or reserved;
+     * use the dedicated boolean, null, and undefined methods for values 20
+     * through 23. Rejecting the entire reserved range prevents encoding a
+     * value that would decode as a different type or as invalid CBOR.
      *
      * @param value the simple value number
      * @return a CBOR simple value
-     * @throws IllegalArgumentException if the value is outside 0..255
+     * @throws IllegalArgumentException if the value is outside 0..255 or is
+     *     in the assigned or reserved range 20..31
      */
     public static CBORValue simpleValue(int value) {
-        if (value < 0 || value > 255) {
+        if (value < 0 || value > 255 || (value >= 20 && value <= 31)) {
             throw new IllegalArgumentException(
-                    "CBOR simple value must be between 0 and 255");
+                    "CBOR simple value must be in 0..19 or 32..255");
         }
 
         return CBORValue.scalar(CBORType.SIMPLE_VALUE, value);
