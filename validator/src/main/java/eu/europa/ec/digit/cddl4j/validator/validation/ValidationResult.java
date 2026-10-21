@@ -23,19 +23,18 @@ import java.util.List;
 /**
  * The outcome of validating a CBOR payload against a CDDL schema.
  *
- * <p>Uses a simple pass/fail flag plus an
- * immutable list of {@link ValidationError}s for the failure case.
+ * <p>Uses an immutable list of {@link ValidationError}s for the failure case. An empty list represents success.
  */
 public final class ValidationResult {
 
-    /** Successful validation result, indicating no issues have been identified */
+    /** Successful validation result, indicating no issues have been identified. */
     private static final ValidationResult SUCCESS = new ValidationResult(Collections.emptyList());
 
-    /** List of validation errors */
+    /** List of validation errors. */
     private final List<ValidationError> errors;
 
     /**
-     * Default constructor
+     * Creates a validation result.
      *
      * @param errors a list of {@link ValidationError}s, if any
      */

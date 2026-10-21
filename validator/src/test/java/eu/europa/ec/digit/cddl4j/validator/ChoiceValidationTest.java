@@ -19,9 +19,11 @@ package eu.europa.ec.digit.cddl4j.validator;
 import eu.europa.ec.digit.cddl4j.cbor.CBOR;
 import eu.europa.ec.digit.cddl4j.cbor.CBORValue;
 import eu.europa.ec.digit.cddl4j.validator.schema.CddlSchema;
+import eu.europa.ec.digit.cddl4j.validator.validation.ValidationError;
 import eu.europa.ec.digit.cddl4j.validator.validation.ValidationResult;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -119,6 +121,55 @@ class ChoiceValidationTest {
         assertInvalid(schema, CBOR.bytes(new byte[] {1, 2, 3}));
         assertInvalid(schema, CBOR.undefined());
         assertInvalid(schema, CBOR.floatingPoint(1.5));
+    }
+
+    @Test
+    void mapTypeChoiceBacktracksAfterCutFailure() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "root = { 0 ^=> int } / { 0 ^=> tstr }");
+
+        assertValid(schema, CBOR.map().put(CBOR.integer(0), CBOR.text("second alternative")).value());
+    }
+
+    @Test
+    void cutFailuresWithoutSharedDiagnosticsRetainBothFailures() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "root = { 0 ^=> uint, * int => any } / { 1 ^=> uint, * int => any }");
+        CBORValue value = CBOR.map()
+                .put(CBOR.integer(0), CBOR.text("not a uint"))
+                .put(CBOR.integer(1), CBOR.text("also not a uint"))
+                .value();
+
+        ValidationResult result = schema.validate(value);
+
+        assertFalse(result.isValid());
+        assertEquals(1, result.getErrors().size());
+        ValidationError choiceError = result.getErrors().get(0);
+        assertEquals("/", choiceError.getInstancePath());
+        assertTrue(choiceError.getMessage().contains("Value did not match any alternative in choice"));
+        assertEquals(2, choiceError.getCauses().size());
+        assertEquals("/", choiceError.getCauses().get(0).getInstancePath());
+        assertEquals(1, choiceError.getCauses().get(0).getCauses().size());
+        assertEquals("/0", choiceError.getCauses().get(0).getCauses().get(0).getInstancePath());
+        assertEquals("/", choiceError.getCauses().get(1).getInstancePath());
+        assertEquals(1, choiceError.getCauses().get(1).getCauses().size());
+        assertEquals("/1", choiceError.getCauses().get(1).getCauses().get(0).getInstancePath());
+    }
+
+    @Test
+    void nfcRetrievalOptionsSucceedAfterWifiAndBleCutFailures() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "RetrievalOptions = WifiOptions / BleOptions / NfcOptions\n" +
+                        "WifiOptions = { ? 0: tstr, * uint => any }\n" +
+                        "BleOptions = { ? 0: bool, * uint => any }\n" +
+                        "NfcOptions = { 0: uint, 1: uint, * uint => any }");
+
+        CBORValue nfcOptions = CBOR.map()
+                .put(CBOR.integer(0), CBOR.integer(10))
+                .put(CBOR.integer(1), CBOR.integer(20))
+                .value();
+
+        assertValid(schema, nfcOptions);
     }
 
     @Test

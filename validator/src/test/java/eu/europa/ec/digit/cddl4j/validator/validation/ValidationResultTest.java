@@ -19,6 +19,7 @@ package eu.europa.ec.digit.cddl4j.validator.validation;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,6 +40,12 @@ class ValidationResultTest {
         assertEquals(1, result.getErrors().size());
         assertSame(error, result.getErrors().get(0));
         assertThrows(UnsupportedOperationException.class, () -> result.getErrors().clear());
+    }
+
+    @Test
+    void failureRequiresAtLeastOneError() {
+        assertThrows(IllegalArgumentException.class, () -> ValidationResult.failure((List<ValidationError>) null));
+        assertThrows(IllegalArgumentException.class, () -> ValidationResult.failure(Collections.emptyList()));
     }
 
     @Test

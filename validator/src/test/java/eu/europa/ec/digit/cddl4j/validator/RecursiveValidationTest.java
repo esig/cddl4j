@@ -151,9 +151,8 @@ class RecursiveValidationTest {
         ValidationResult result = schema.validate(tree);
 
         assertFalse(result.isValid());
-        assertEquals("/", result.getErrors().get(0).getInstancePath());
-        assertEquals("Value did not match any alternative in choice (uint / {value: uint, children: [* tree]})",
-                result.getErrors().get(0).getMessage());
+        assertEquals("/children[1]/value", result.getErrors().get(0).getInstancePath());
+        assertTrue(result.getErrors().get(0).getMessage().contains("Expected uint"));
     }
 
     @Test

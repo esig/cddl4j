@@ -523,6 +523,75 @@ class GroupChoiceValidationTest {
 
         assertInvalid(schema, value);
     }
+
+    @Test
+    void groupChoiceCanTryWildcardAlternativeAfterCutFailure() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { 7 ^=> int // * label => values }\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        assertValid(schema, CBOR.map().put(CBOR.integer(7), CBOR.integer(128)).value());
+        // A cut prevents fallback to later entries in the same group, not to a separate // alternative.
+        // This mirrors anweiss/cddl's isolated evaluation of group-choice alternatives.
+        assertValid(schema, CBOR.map().put(CBOR.integer(7), CBOR.text("not-an-int")).value());
+        assertValid(schema, CBOR.map().put(CBOR.text("7"), CBOR.text("custom value")).value());
+        assertValid(schema, CBOR.map().put(CBOR.text("custom"), CBOR.text("value")).value());
+    }
+
+    @Test
+    void mapCutRejectsInvalidReservedEntryWithoutBlockingCustomEntries() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = { Reserved_Headers, * tstr => any }\n" +
+                        "Reserved_Headers = (7 ^=> int // 8 ^=> bstr)");
+
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(7), CBOR.integer(128))
+                .put(CBOR.text("custom"), CBOR.trueValue())
+                .value());
+        assertValid(schema, CBOR.map()
+                .put(CBOR.integer(8), CBOR.bytes(new byte[] { 0x01 }))
+                .put(CBOR.text("custom"), CBOR.trueValue())
+                .value());
+        assertInvalid(schema, CBOR.map()
+                .put(CBOR.integer(7), CBOR.text("not-an-int"))
+                .put(CBOR.text("custom"), CBOR.trueValue())
+                .value());
+        assertInvalid(schema, CBOR.map()
+                .put(CBOR.integer(7), CBOR.integer(128))
+                .put(CBOR.integer(8), CBOR.bytes(new byte[] { 0x01 }))
+                .value());
+        assertInvalid(schema, CBOR.map().put(CBOR.text("custom"), CBOR.trueValue()).value());
+    }
+
+    @Test
+    void mapKeysEnforcedGroupNestedMap() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "header_map = {\n" +
+                        "    ? 1 ^=> Alg,          ; algorithm identifier\n" +
+                        "    ? 2 ^=> [+label],     ; criticality\n" +
+                        "    ? 3 ^=> (tstr / int), ; content type\n" +
+                        "    ? 4 ^=> bstr,         ; key identifier\n" +
+                        "    * label => values\n" +
+                        "}\n" +
+                        "Alg = {\n" +
+                        "    1 => int           ; id\n" +
+                        "}\n" +
+                        "label = int / tstr\n" +
+                        "values = any");
+
+        CBORValue value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.map().put(CBOR.integer(1), CBOR.integer(128)).value())
+                .value();
+
+        assertValid(schema, value);
+
+        value = CBOR.map()
+                .put(CBOR.integer(1), CBOR.map().put(CBOR.integer(1), CBOR.text("128")).value())
+                .value();
+
+        assertInvalid(schema, value);
+    }
     
     @Test
     void mapKeysGroupWithoutCutAllowsWildcardFallback() {

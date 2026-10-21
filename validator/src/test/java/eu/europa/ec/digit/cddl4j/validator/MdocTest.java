@@ -35,17 +35,19 @@ class MdocTest {
 
     @Test
     void validMdoc() throws IOException {
-        CddlSchema schema = CddlValidator.loadSchemaFromFile(new File("src/test/resources/schema/deviceResponse.cddl").toPath());
-
-        ValidationResult result = schema.validate(Files.readAllBytes(new File("src/test/resources/cbor/mdoc_valid.cbor").toPath()), "DeviceResponse");
+        CddlSchema schema = CddlValidator.loadSchemaFromFile(
+                new File("src/test/resources/schema/deviceResponse.cddl").toPath());
+        ValidationResult result = schema.validate(
+                Files.readAllBytes(new File("src/test/resources/cbor/mdoc_valid.cbor").toPath()), "DeviceResponse");
         assertTrue(result.isValid(), result.getErrors().toString());
     }
 
     @Test
     void invalidMdoc() throws IOException {
-        CddlSchema schema = CddlValidator.loadSchemaFromFile(new File("src/test/resources/schema/deviceResponse.cddl").toPath());
-
-        ValidationResult result = schema.validate(Files.readAllBytes(new File("src/test/resources/cbor/mdoc_invalid.cbor").toPath()), "DeviceResponse");
+        CddlSchema schema = CddlValidator.loadSchemaFromFile(
+                new File("src/test/resources/schema/deviceResponse.cddl").toPath());
+        ValidationResult result = schema.validate(
+                Files.readAllBytes(new File("src/test/resources/cbor/mdoc_invalid.cbor").toPath()), "DeviceResponse");
         assertFalse(result.isValid(), result.getErrors().toString());
 
         List<ValidationError> errors = result.getErrors();
@@ -53,24 +55,27 @@ class MdocTest {
 
         List<String> errorMessages = errors.stream().map(ValidationError::getMessage).collect(Collectors.toList());
         assertTrue(errorMessages.contains("Required key 'version' is missing"));
-        assertTrue(errorMessages.contains("Value did not match any alternative in choice ({deviceSignature: DeviceSignature} / {deviceMac: DeviceMac})"));
+        assertTrue(errorMessages.contains(
+                "Value did not match any alternative in choice (bstr .cbor header_map / bstr .size 0)"), errorMessages.toString());
+        assertEquals("/documents[0]/deviceSigned/deviceAuth/deviceSignature[0]", errors.get(1).getInstancePath());
 
         assertEquals(0, errors.get(0).getCauses().size());
         assertEquals(2, errors.get(1).getCauses().size(), errors.toString());
 
         List<ValidationError> causes = errors.get(1).getCauses();
         errorMessages = causes.stream().map(ValidationError::getMessage).collect(Collectors.toList());
-        assertTrue(errorMessages.contains("Choice alternative ({deviceSignature: DeviceSignature}) validation failed"));
-        assertTrue(errorMessages.contains("Choice alternative ({deviceMac: DeviceMac}) validation failed"));
+        assertTrue(errorMessages.contains("Choice alternative (bstr .cbor header_map) validation failed"));
+        assertTrue(errorMessages.contains("Choice alternative (bstr .size 0) validation failed"));
 
         assertEquals(1, causes.get(0).getCauses().size(), causes.toString());
-        errorMessages = causes.get(0).getCauses().stream().map(ValidationError::getMessage).collect(Collectors.toList());
-        assertTrue(errorMessages.contains("Value did not match any alternative in choice (bstr .cbor header_map / bstr .size 0)"));
+        errorMessages = causes.get(0).getCauses().stream()
+                .map(ValidationError::getMessage).collect(Collectors.toList());
+        assertTrue(errorMessages.contains("Expected bstr (byte string) but got CBOR map"));
 
-        assertEquals(2, causes.get(1).getCauses().size(), causes.toString());
-        errorMessages = causes.get(1).getCauses().stream().map(ValidationError::getMessage).collect(Collectors.toList());
-        assertTrue(errorMessages.contains("Required key 'deviceMac' is missing"));
-        assertTrue(errorMessages.contains("Unexpected key 'deviceSignature' not defined in schema"));
+        assertEquals(1, causes.get(1).getCauses().size(), causes.toString());
+        errorMessages = causes.get(1).getCauses().stream()
+                .map(ValidationError::getMessage).collect(Collectors.toList());
+        assertTrue(errorMessages.contains("Expected bstr (byte string) but got CBOR map"));
     }
 
 }

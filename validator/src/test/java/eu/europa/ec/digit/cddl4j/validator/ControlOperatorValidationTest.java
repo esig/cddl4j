@@ -20,8 +20,13 @@ import eu.europa.ec.digit.cddl4j.cbor.CBOR;
 import eu.europa.ec.digit.cddl4j.cbor.CBORValue;
 import eu.europa.ec.digit.cddl4j.validator.schema.CddlSchema;
 import eu.europa.ec.digit.cddl4j.validator.schema.parser.CddlParser;
+import eu.europa.ec.digit.cddl4j.validator.validation.ValidationError;
+import eu.europa.ec.digit.cddl4j.validator.validation.ValidationResult;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -111,6 +116,61 @@ class ControlOperatorValidationTest {
          */
         CBORValue value = CBOR.value(42);
         assertFalse(schema.validate(value).isValid());
+    }
+
+    @Test
+    void shouldReportOnlyCutEntryFailureWhenExpandedOptionalGroupAlsoFails() {
+        String schemaSource =
+                "root = [ bstr .cbor headers ]\n"
+                        + "label = int / tstr\n"
+                        + "values = any\n"
+                        + "sigD = { 1 => #6.32(tstr) }\n"
+                        + "Generic_Headers = (\n"
+                        + "    ? (5 => bstr // 6 => bstr)\n"
+                        + ")\n"
+                        + "headers = {\n"
+                        + "    Generic_Headers,\n"
+                        + "    ? 267 ^=> sigD,\n"
+                        + "    * label => values\n"
+                        + "}";
+        CddlSchema schema = new CddlParser().parse(schemaSource);
+
+        CBORValue invalidSigD = CBOR.map()
+                .put(CBOR.integer(1), CBOR.text("https://example.org/policy"))
+                .value();
+        CBORValue protectedHeaders = CBOR.map()
+                .put(CBOR.integer(267), invalidSigD)
+                .value();
+
+        CBORValue root = CBOR.array()
+                .add(CBOR.bytes(protectedHeaders.encodeToBytes()))
+                .value();
+        ValidationResult result = schema.validate(root);
+
+        assertFalse(result.isValid());
+        assertEquals(1, result.getErrors().size());
+
+        ValidationError error = result.getErrors().get(0);
+        assertEquals("/[0]/.cbor", error.getInstancePath());
+        assertTrue(error.getMessage().contains("Value did not match any alternative in choice"));
+
+        List<ValidationError> causes = error.getCauses();
+        assertEquals(3, causes.size());
+
+        for (ValidationError cause : causes) {
+            assertEquals("/[0]/.cbor", cause.getInstancePath());
+            assertTrue(cause.getMessage().contains("Choice alternative"));
+
+            boolean taggedErrorFound = false;
+            for (ValidationError subCause : cause.getCauses()) {
+                if (subCause.getMessage().contains("Expected tagged value (#6.32)")) {
+                    assertEquals("/[0]/.cbor/267/1", subCause.getInstancePath());
+                    taggedErrorFound = true;
+                    break;
+                }
+            }
+            assertTrue(taggedErrorFound);
+        }
     }
 
     @Test

@@ -264,6 +264,17 @@ class MapValidationTest {
     }
 
     @Test
+    void cutPreventsWildcardFallbackWithinTheSameMapGroup() {
+        CddlSchema schema = CddlValidator.loadSchema(
+                "lookup = { ? 7: int, * label => any }\n" +
+                        "label = int / tstr");
+
+        assertValid(schema, CBOR.map().put(CBOR.integer(7), CBOR.integer(128)).value());
+        assertInvalid(schema, CBOR.map().put(CBOR.integer(7), CBOR.text("not-an-int")).value());
+        assertValid(schema, CBOR.map().put(CBOR.text("custom"), CBOR.trueValue()).value());
+    }
+
+    @Test
     void typedKeyMatchesAnyKeyOfThatType() {
         CddlSchema schema = CddlValidator.loadSchema(
                 "lookup = { * uint => tstr }");
@@ -1184,7 +1195,7 @@ class MapValidationTest {
         assertInvalid(schema, CBOR.map()
                 .put(CBOR.integer(1), CBOR.bytes(new byte[] {0x00}))
                 .value());
-        }
+    }
 
     private static void assertValid(CddlSchema schema, CBORValue value) {
         ValidationResult result = schema.validate(value);

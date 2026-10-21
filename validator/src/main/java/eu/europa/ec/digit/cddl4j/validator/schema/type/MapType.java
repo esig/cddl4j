@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
  *   <li>No extra keys exist unless the schema includes a catch-all wildcard entry.</li>
  * </ol>
  */
-public final class MapType extends CddlType {
+public final class MapType extends CddlType implements CutAwareType {
 
     /** The map entries in schema order. */
     private final List<MapEntry> entries;
@@ -84,25 +84,33 @@ public final class MapType extends CddlType {
      */
     @Override
     public ValidationResult validate(CBORValue value, ValidationContext ctx) {
+        return validateCutAware(value, ctx).getValidationResult();
+    }
+
+    @Override
+    public CutAwareValidationResult validateCutAware(CBORValue value, ValidationContext ctx) {
         if (value.getType() != CBORType.MAP) {
-            return fail(ctx, "Expected map but got " + PrimitiveType.cborTypeName(value));
+            ValidationResult result = fail(ctx, "Expected map but got " + PrimitiveType.cborTypeName(value));
+            return CutAwareValidationResult.of(result);
         }
 
         List<ValidationError> errors = new ArrayList<>();
         Set<CBORValue> consumedKeys = new LinkedHashSet<>();
+        boolean matchedCutKey = false;
 
         List<MapEntry> unwrapped = expandUnwrappedReferences(entries, ctx, new HashSet<>());
         List<List<MapEntry>> alternatives = expandGroupReferences(unwrapped, ctx, value.size());
         if (alternatives.size() > 1) {
-            return new ChoiceType(mapAlternatives(alternatives)).validate(value, ctx);
+            // Preserve cut information so the choice can select the most relevant failed branch.
+            return new ChoiceType(mapAlternatives(alternatives)).validateCutAware(value, ctx);
         }
 
         if (!alternatives.isEmpty()) {
             for (MapEntry entry : alternatives.get(0)) {
                 if (entry.isBareWord()) {
-                    validateBareWordEntry(entry, value, ctx, consumedKeys, errors);
+                    matchedCutKey |= validateBareWordEntry(entry, value, ctx, consumedKeys, errors);
                 } else {
-                    validateTypedEntry(entry, value, ctx, consumedKeys, errors);
+                    matchedCutKey |= validateTypedEntry(entry, value, ctx, consumedKeys, errors);
                 }
             }
         }
@@ -115,7 +123,11 @@ public final class MapType extends CddlType {
             }
         }
 
-        return errors.isEmpty() ? ValidationResult.success() : ValidationResult.failure(errors);
+        if (errors.isEmpty()) {
+            return CutAwareValidationResult.of(ValidationResult.success());
+        }
+        ValidationResult result = ValidationResult.failure(errors);
+        return matchedCutKey ? CutAwareValidationResult.ofCutMatchFailure(result) : CutAwareValidationResult.of(result);
     }
 
     private List<MapEntry> expandUnwrappedReferences(List<MapEntry> source, ValidationContext ctx,
@@ -211,9 +223,10 @@ public final class MapType extends CddlType {
      * @param ctx the validation context
      * @param consumed the set of keys already consumed by schema entries
      * @param errors the list to which validation errors are added
+     * @return {@code true} if the cut-enabled bare-word entry's key matched
      */
-    private void validateBareWordEntry(MapEntry entry, CBORValue map, ValidationContext ctx, Set<CBORValue> consumed,
-                                       List<ValidationError> errors) {
+    private boolean validateBareWordEntry(MapEntry entry, CBORValue map, ValidationContext ctx,
+                                           Set<CBORValue> consumed, List<ValidationError> errors) {
         String keyStr = entry.getBareWordKey();
         CBORValue cborKey = CBOR.text(keyStr);
         CBORValue mapValue = map.get(cborKey);
@@ -223,14 +236,16 @@ public final class MapType extends CddlType {
                 errors.add(new ValidationError(ctx.getInstancePath(),
                         "Required key '" + keyStr + "' is missing"));
             }
-            return;
+            return false;
         }
 
-        consumed.add(findKey(map, cborKey));
+        CBORValue matchedKey = findKey(map, cborKey);
+        consumed.add(matchedKey);
         ValidationResult result = entry.getValueType().validate(mapValue, ctx.child(keyStr));
         if (!result.isValid()) {
             errors.addAll(result.getErrors());
         }
+        return true;
     }
 
     /**
@@ -249,11 +264,13 @@ public final class MapType extends CddlType {
      * @param ctx the validation context
      * @param consumed the set of keys already consumed by schema entries
      * @param errors the list to which validation errors are added
+     * @return {@code true} if a cut key matched or a nested cut failure contributes to this entry's errors
      */
-    private void validateTypedEntry(MapEntry entry, CBORValue map, ValidationContext ctx,
-                                    Set<CBORValue> consumed, List<ValidationError> errors) {
+    private boolean validateTypedEntry(MapEntry entry, CBORValue map, ValidationContext ctx,
+                                       Set<CBORValue> consumed, List<ValidationError> errors) {
         List<CBORValue> matchingKeys = new ArrayList<>();
         Map<CBORValue, List<ValidationError>> matchingKeyErrors = new HashMap<>();
+        boolean cutMatch = false;
 
         for (CBORValue key : map.getKeys()) {
             if (containsKey(consumed, key)) {
@@ -265,7 +282,15 @@ public final class MapType extends CddlType {
                 continue;
             }
 
-            if (!entry.isCut()) {
+            if (entry.isCut()) {
+                cutMatch = true;
+                consumed.add(key);
+                String keyStr = keyToString(key);
+                ValidationResult valueResult = entry.getValueType().validate(map.get(key), ctx.child(keyStr));
+                if (!valueResult.isValid()) {
+                    errors.addAll(valueResult.getErrors());
+                }
+            } else {
                 String keyStr = keyToString(key);
                 ValidationResult valueResult = entry.getValueType().validate(map.get(key), ctx.child(keyStr));
                 if (!valueResult.isValid()) {
@@ -286,42 +311,40 @@ public final class MapType extends CddlType {
             if (!matchingKeyErrors.isEmpty()) {
                 consumed.addAll(matchingKeyErrors.keySet());
             }
-            List<ValidationError> causes = matchingKeyErrors.values().stream().flatMap(List::stream).collect(Collectors.toList());
+            List<ValidationError> causes = matchingKeyErrors.values().stream()
+                    .flatMap(List::stream)
+                    .collect(Collectors.toList());
             if (allCount < min) {
                 errors.add(new ValidationError(ctx.getInstancePath(), "Expected at least " + min + " key(s) matching "
                         + entry.getKeyType() + " but found " + validCount, causes));
             } else {
                 errors.addAll(causes);
             }
-            return;
+            return cutMatch;
         }
 
         if (validCount > max) {
             if (!matchingKeyErrors.isEmpty()) {
                 consumed.addAll(matchingKeyErrors.keySet());
             }
-            List<ValidationError> causes = matchingKeyErrors.values().stream().flatMap(List::stream).collect(Collectors.toList());
+            List<ValidationError> causes = matchingKeyErrors.values().stream()
+                    .flatMap(List::stream)
+                    .collect(Collectors.toList());
             if (allCount > max) {
                 errors.add(new ValidationError(ctx.getInstancePath(), "Expected at most " + max + " key(s) matching "
                         + entry.getKeyType() + " but found " + validCount, causes));
             } else {
                 errors.addAll(causes);
             }
-            return;
+            return cutMatch;
         }
 
         for (CBORValue key : matchingKeys) {
-            consumed.add(key);
-
-            if (entry.isCut()) {
-                String keyStr = keyToString(key);
-                CBORValue mapValue = map.get(key);
-                ValidationResult result = entry.getValueType().validate(mapValue, ctx.child(keyStr));
-                if (!result.isValid()) {
-                    errors.addAll(result.getErrors());
-                }
+            if (!entry.isCut()) {
+                consumed.add(key);
             }
         }
+        return cutMatch;
     }
 
     /**
