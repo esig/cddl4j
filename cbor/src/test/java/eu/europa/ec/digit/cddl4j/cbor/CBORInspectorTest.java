@@ -127,23 +127,20 @@ class CBORInspectorTest {
 
         CBORInspector inspector = new CBORInspector(input);
 
-        assertEquals(
-                new BigInteger("18446744073709551615"),
-                inspector.readTagBigInteger(inspector.read()));
+        assertEquals(new BigInteger("18446744073709551615"), inspector.readTagBigInteger(inspector.read()));
         assertEquals(0x01, input.read());
         assertEquals(-1, input.read());
     }
 
     @Test
-    void readTagLongRejectsTagsOutsideSignedRange() {
+    void readTagLongRejectsTagsOutsideSignedRange() throws CBORDecodeException {
         CBORInspector inspector = new CBORInspector(new ByteArrayInputStream(new byte[] {
                 (byte) 0xdb,
                 (byte) 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
         }));
 
-        assertThrows(
-                CBORDecodeException.class,
-                () -> inspector.readTag(inspector.read()));
+        int initialByte = inspector.read();
+        assertThrows(CBORDecodeException.class, () -> inspector.readTag(initialByte));
     }
 
     @Test
