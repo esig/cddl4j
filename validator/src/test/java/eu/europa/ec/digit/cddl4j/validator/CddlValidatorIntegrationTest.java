@@ -75,8 +75,7 @@ class CddlValidatorIntegrationTest {
                                 .add("floor-3")
                                 .value();
 
-        // The map builder is used when the object is constructed. Since
-        // CBORObject maps are immutable, build the complete map here.
+        // Build the complete map through its editor before encoding it.
         CBORValue reading = CBOR.map()
                                 .put("device-id", "sensor-002")
                                 .put("timestamp", 1_700_000_001L)

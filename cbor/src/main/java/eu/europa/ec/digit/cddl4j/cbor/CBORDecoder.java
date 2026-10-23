@@ -36,8 +36,10 @@ import java.util.Objects;
  * preferred serialization: for example, an integer may use a longer-than-
  * necessary argument encoding.
  *
- * <p>CBOR maps containing duplicate keys are rejected because duplicate keys
- * are invalid CBOR map data for purposes of generic validity checking.
+ * <p>RFC 8949 distinguishes well-formed encodings from valid CBOR data: a
+ * duplicate-key map may be well-formed but is not valid and has indeterminate
+ * decoding. This decoder rejects duplicate keys rather than choosing an
+ * application-specific interpretation.
  *
  * <p>Only one top-level data item is accepted by the decode methods.
  *
@@ -146,6 +148,7 @@ public final class CBORDecoder {
      *
      * @param input the input stream containing CBOR data
      * @return if the input contains a valid CBOR data item
+     * @throws NullPointerException if {@code input} is {@code null}
      */
     public static boolean isCbor(InputStream input) {
         try {

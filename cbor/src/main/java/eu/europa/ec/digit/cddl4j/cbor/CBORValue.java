@@ -805,7 +805,8 @@ public final class CBORValue {
     }
 
     /**
-     * Encodes this CBOR value into deterministic CBOR bytes.
+     * Encodes this value using preferred CBOR serialization while preserving
+     * map insertion order.
      *
      * @return the encoded CBOR bytes
      */
@@ -1102,12 +1103,17 @@ public final class CBORValue {
          * <p>Map keys must be unique. Use {@link #set(Object, Object)} to
          * replace an existing value.
          *
+         * <p>Because {@code CBORValue} containers are mutable, do not mutate an
+         * array or map after using it as a key. Such mutation can change key
+         * equality after this insertion-time uniqueness check.
+         *
          * @param key the map key
          * @param element the value
          * @return this editor
          * @throws IllegalArgumentException if the key already exists
          */
         public CBORMapEditor put(Object key, Object element) {
+            // TODO: Snapshot or freeze container keys to preserve uniqueness after insertion.
             CBORValue normalizedKey = normalizeKey(key);
 
             if (containsKey(normalizedKey)) {

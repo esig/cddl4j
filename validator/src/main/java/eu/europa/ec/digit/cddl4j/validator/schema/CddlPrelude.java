@@ -95,17 +95,17 @@ public final class CddlPrelude {
         m.put("false",      LiteralType.ofBool(false));
         m.put("true",       LiteralType.ofBool(true));
 
-        // ── Float sub-ranges ─────────────────────────────────────────────
+        // Float sub-ranges
         // float16-32 = float16 / float32
         m.put("float16-32", choice(PrimitiveType.FLOAT16, PrimitiveType.FLOAT32));
         // float32-64 = float32 / float64
         m.put("float32-64", choice(PrimitiveType.FLOAT32, PrimitiveType.FLOAT64));
 
-        // ── Number super-type ─────────────────────────────────────────────
+        // Number super-type
         // number = uint / nint / float
         m.put("number", choice(PrimitiveType.UINT, PrimitiveType.NINT, PrimitiveType.FLOAT));
 
-        // ── Big integer types (RFC 8949 §3.4.3) ──────────────────────────
+        // Big integer types (RFC 8949 §3.4.3)
         // biguint  = #6.2(bstr)
         CddlType biguint = new TaggedType(2, PrimitiveType.BSTR);
         // bignint  = #6.3(bstr)
@@ -126,7 +126,7 @@ public final class CddlPrelude {
         // bigfloat = #6.5([int, bigint])
         m.put("bigfloat", new TaggedType(5, twoElemArray(PrimitiveType.INT, bigint)));
 
-        // ── Date / time tags (RFC 8949 §3.4.1) ───────────────────────────
+        // Date / time tags (RFC 8949 §3.4.1)
         // tdate = #6.0(tstr)   — text date-time string (ISO 8601)
         m.put("tdate", new TaggedType(0, PrimitiveType.TSTR));
         // time  = #6.1(uint / float)   — numeric seconds since epoch
@@ -146,14 +146,14 @@ public final class CddlPrelude {
         m.put("regexp",       new TaggedType(35,    PrimitiveType.TSTR));
         m.put("mime-message", new TaggedType(36,    PrimitiveType.TSTR));
 
-        // ── Self-described CBOR (RFC 8949 §3.4.6) ────────────────────────
+        // Self-described CBOR (RFC 8949 §3.4.6)
         // cbor-any = #6.55799(any)
         m.put("cbor-any",     new TaggedType(55799, PrimitiveType.ANY));
 
         return m;
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
+    // Helpers
 
     private static ChoiceType choice(CddlType... alts) {
         return new ChoiceType(Arrays.asList(alts));

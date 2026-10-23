@@ -2,8 +2,9 @@
 
 **CBOR library and CDDL validator. Written in Java.**
 
-`cddl4j` is a Java 8 library implementing [IETF RFC 8949](https://www.rfc-editor.org/rfc/rfc8949.html) and 
-[IETF RFC 8610](https://www.rfc-editor.org/rfc/rfc8610.html) standards. The main functinoalities are:
+`cddl4j` is a Java 8 library that implements CBOR data handling based on
+[IETF RFC 8949](https://www.rfc-editor.org/rfc/rfc8949.html) and supports a documented subset of CDDL from
+[IETF RFC 8610](https://www.rfc-editor.org/rfc/rfc8610.html). Its main features are:
 
 - CBOR data structures creation;
 - CBOR content parsing;
@@ -22,8 +23,9 @@ The project contains two modules:
 
 ## Project design
 
-- **No third-party dependencies:** the project includes its own CBOR representation and codec.
-- **Immutability:** CBOR objects are conditionally immutable, as well as the validator's `CddlSchema` is thread-safe.
+- **No runtime third-party dependencies:** the project includes its own CBOR representation and codec.
+- **Immutability:** `CddlValidator` and `CddlSchema` instances are immutable and thread-safe. `CBORValue` objects are 
+  immutable, but CBOR Arrays and CBOR Maps can be edited through explicit editor objects.
 - **Extensible:** allows application-defined CDDL rules and custom control operators without changing the library.
 - **Java 8 compatible:** and tested with JDK 26.
 
@@ -96,7 +98,7 @@ The parser covers the following practical subset of CDDL.
 | Numeric prelude types | `number`, `integer`, `unsigned`, `bigint`, `biguint`, `bignint`, `decfrac`, `bigfloat`, `float16-32`, `float32-64` |
 | Semantic-tag prelude types | `tdate`, `time`, `uri`, `b64url`, `b64legacy`, `regexp`, `mime-message`, `encoded-cbor`, `eb64url`, `eb64legacy`, `eb16`, `cbor-any` |
 | Boolean literals | `true`, `false` |
-| Integer literals | decimal and hexadecimal, e.g. `42`, `-7`, `0xFF` |
+| Integer literals | decimal, hexadecimal, and binary, e.g. `42`, `-7`, `0xFF`, `0b101` |
 | Floating-point literals | decimal forms such as `1.5`, `3.14` |
 | Text literals | `"hello"` with CDDL string escapes |
 | Byte-string literals | `h'deadbeef'`, `b64'SGVsbG8='` |
@@ -159,10 +161,10 @@ CddlSchema another = CddlValidator.loadSchema(cddlSource)
         .withRootRule("DeviceResponse");
 ```
 
-`CddlValidator` and `CddlSchema` are immutable and **thread-safe**. 
+`CddlValidator` and `CddlSchema` instances are immutable and **thread-safe**.
 
-Classes `CddlParser` and `CddlTokenizer`invoked internally during the validation process, 
-and are stateful and not thread-safe.
+`CddlParser` and `CddlTokenizer` are used while loading schemas, and invoked internally during the validation process. 
+They are stateful not thread-safe; use a separate instance for concurrent parsing.
 
 ## Validation
 
@@ -311,12 +313,28 @@ the regular in-memory representation. Encoded output is always emitted using def
 The decoder rejects malformed input including truncated items, reserved additional-information values, invalid UTF-8,
 invalid indefinite-length chunks, trailing bytes after the first data item, and duplicate map keys.
 
-The implementation includes a recursion guard against stack exhaustion, allowing to set a maximum nesting level of the
-embedded CBOR structures. The default limit is set to 32-levels and may be configured through the System property
-`"eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth"`.
+Currently **CBORDecoder** processes exactly one CBOR data item. If trailing bytes remain, including when a sequence of
+CBOR data items is passed, the value is rejected.
 
-Duplicate map keys are rejected rather than silently overwriting one another. This follows the CBOR validity model and is
-particularly useful when validating untrusted protocol input.
+Duplicate map keys are rejected rather than silently overwriting one another. RFC 8949 states that a duplicate-key map
+may be well-formed but is not valid CBOR and has indeterminate decoding; this library rejects duplicates instead of
+choosing an application-specific interpretation.
+For mutable array or map keys, uniqueness is checked when the key is inserted; do not mutate such a key afterward,
+because its equality can change.
+
+### Safeguards and size limitations
+
+The implementation includes safeguards for processing untrusted CBOR input, with applicable limits enforced by default.
+The following configurations are provided through the System properties:
+
+- `eu.europa.ec.digit.cddl4j.cbor.max_byte_string_length` - prevents pre-allocation of a byte array from exceeding VM 
+memory limit for untrusted byte string length inputs. By default, the size of a byte string is limited to `10 MB`. 
+Negative values are treated as no limit.
+- `eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth` - prevents deeply nested untrusted input from exhausting the Java 
+call stack, decoding is limited to a pre-defined maximum number of nested data items. By default, the value is `32`. 
+Negative values are treated as no limit.
+
+Currently, there is no total input-size or item-count limit; callers should bound streams when decoding untrusted data.
 
 ### Encoding behavior
 
@@ -399,8 +417,8 @@ To build without running tests:
 mvn package -DskipTests
 ```
 
-Tests use JUnit 6 thus the project packaging requires at least Java 17 to build. 
-The artifacts target version is still Java 8.
+Production artifacts target Java 8 bytecode.
+Tests use JUnit 6 thus the project packaging requires at least Java 17 to build.
 
 ## Modules and packages
 
@@ -423,13 +441,13 @@ cddl4j
         │   ├── CddlRuleSet      rule registry
         │   ├── operator         built-in/custom control operators
         │   ├── parser            tokenizer and recursive-descent parser
-        │   └── types             CDDL type model
+        │   └── type              CDDL type model
         └── validation
             ├── ValidationResult  validation outcome
             └── ValidationError   path/message/cause information
 ```
 
-The package `schema/types` contains the current CDDL type model; `schema/operator` contains the control-operator extension
+The package `schema/type` contains the current CDDL type model; `schema/operator` contains the control-operator extension
 API and built-in operators.
 
 ## References
