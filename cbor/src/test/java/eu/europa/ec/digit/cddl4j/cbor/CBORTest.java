@@ -401,6 +401,32 @@ class CBORTest {
         }
     }
 
+    /** Verifies that the configured byte limit is cumulative across indefinite string chunks. */
+    @Test
+    void configuredStringLengthLimitAppliesAcrossIndefiniteChunks() {
+        String previousLimit = System.getProperty(CBORProperties.MAX_BYTE_STRING_LENGTH);
+        System.setProperty(CBORProperties.MAX_BYTE_STRING_LENGTH, "1");
+
+        try {
+            byte[] byteString = {
+                    (byte) 0x5f, (byte) 0x41, 0x61, (byte) 0x41, 0x62, (byte) 0xff
+            };
+            byte[] textString = {
+                    (byte) 0x7f, (byte) 0x61, 0x61, (byte) 0x61, 0x62, (byte) 0xff
+            };
+
+            assertThrows(CBORDecodeException.class, () -> CBORDecoder.decode(byteString));
+            assertThrows(CBORDecodeException.class, () -> CBORDecoder.decode(textString));
+        } finally {
+            if (previousLimit == null) {
+                System.clearProperty(CBORProperties.MAX_BYTE_STRING_LENGTH);
+            } else {
+                System.setProperty(CBORProperties.MAX_BYTE_STRING_LENGTH, previousLimit);
+            }
+        }
+    }
+
+    /** Verifies that malformed indefinite-string chunks are rejected by the decoder. */
     @Test
     void rejectsInvalidIndefiniteStringChunks() {
         assertThrows(CBORDecodeException.class,

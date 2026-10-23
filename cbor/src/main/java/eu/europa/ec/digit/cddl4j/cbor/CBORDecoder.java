@@ -43,19 +43,17 @@ import java.util.Objects;
  *
  * <p>Only one top-level data item is accepted by the decode methods.
  *
- * <p>For preventing the application on reaching the resource limits,
- * implementation provides the following  safeguards, configurable with System
- * properties:
+ * <p>To reduce resource-exhaustion risks, the implementation provides the following
+ * safeguards, configurable with system properties:
  * <ul>
  * <li>{@code eu.europa.ec.digit.cddl4j.cbor.max_byte_string_length} -
- * prevents pre-allocation of a byte array from exceeding VM memory limit,
- * for untrusted byte string length inputs.
- * By default, the size of a byte string is limited to 10 MB.
+ * limits the encoded byte length of each byte or text string, including the
+ * combined length of indefinite-string chunks. The default limit is 10 MiB.
  * Negative values are treated as no limit.</li>
  * <li>{@code eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth} - prevents
  * deeply nested untrusted input from exhausting the Java call stack, decoding
- * is limited to a pre-defined maximum number of nested data items.
- * By default, the value is 32. Negative values are treated as no limit.</li>
+ * is limited to a maximum of 32 nested data items by default.
+ * Negative values are treated as no limit.</li>
  * </ul>
  *
  * <p>NOTE: This is implementations limits, not a restriction imposed by CBOR.
@@ -83,6 +81,7 @@ public final class CBORDecoder {
      * @throws CBORDecodeException if the input is truncated, malformed,
      *     contains invalid UTF-8, contains duplicate map keys, or contains
      *     trailing bytes, or exceeds the supported nesting depth
+     * @throws IllegalArgumentException if a resource-limit system property is invalid
      */
     public static CBORValue decode(byte[] data) throws CBORDecodeException {
         Objects.requireNonNull(data, "Input is null");
@@ -102,6 +101,7 @@ public final class CBORDecoder {
      * @throws CBORDecodeException if the input is truncated, malformed,
      *     contains invalid UTF-8, contains duplicate map keys, or contains
      *     trailing bytes, or exceeds the supported nesting depth
+     * @throws IllegalArgumentException if a resource-limit system property is invalid
      */
     public static CBORValue decode(InputStream input) throws CBORDecodeException {
         Reader reader = new Reader(input);
@@ -128,6 +128,7 @@ public final class CBORDecoder {
      * @return {@code true} if the input contains a valid CBOR data item;
      *     {@code false} otherwise
      * @throws NullPointerException if {@code input} is {@code null}
+     * @throws IllegalArgumentException if a resource-limit system property is invalid
      */
     public static boolean isCbor(byte[] input) {
         Objects.requireNonNull(input, "Input is null");
@@ -352,7 +353,8 @@ public final class CBORDecoder {
                     return CBORValue.scalar(CBORType.INTEGER, readUnsignedArgument(additionalInformation));
 
                 case NEGATIVE_INTEGER:
-                    return CBORValue.scalar(CBORType.INTEGER, readUnsignedArgument(additionalInformation).negate().subtract(BigInteger.ONE));
+                    return CBORValue.scalar(CBORType.INTEGER,
+                            readUnsignedArgument(additionalInformation).negate().subtract(BigInteger.ONE));
 
                 case BYTE_STRING:
                     return CBORValue.scalar(CBORType.BYTE_STRING, readByteString(additionalInformation));
@@ -461,11 +463,13 @@ public final class CBORDecoder {
         }
 
         byte[] readByteString(int additionalInformation) throws CBORDecodeException {
+            long maxByteStringLength = getMaxByteStringLength();
             if (additionalInformation != 31) {
-                return readDefiniteByteString(additionalInformation);
+                return readDefiniteByteString(additionalInformation, maxByteStringLength, 0);
             }
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
+            long totalLength = 0;
 
             while (peek() != 0xff) {
                 int initial = read();
@@ -476,24 +480,18 @@ public final class CBORDecoder {
                     error("Indefinite byte string contains an invalid chunk");
                 }
 
-                byte[] chunk = readDefiniteByteString(chunkAdditionalInformation);
+                byte[] chunk = readDefiniteByteString(chunkAdditionalInformation, maxByteStringLength, totalLength);
 
                 output.write(chunk, 0, chunk.length);
+                totalLength += chunk.length;
             }
 
             readBreak();
             return output.toByteArray();
         }
 
-        /**
-         * Reads a definite-length byte string with pre-allocating its declared size.
-         * Verifies the byte string size against the pre-defined limits (default is 10 MB).
-         *
-         * @param additionalInformation the CBOR length encoding
-         * @return the byte-string contents
-         * @throws CBORDecodeException if unable to read the content
-         */
-        byte[] readDefiniteByteString(int additionalInformation) throws CBORDecodeException {
+        private byte[] readDefiniteByteString(int additionalInformation, long maxByteStringLength, long previousChunkLength)
+                throws CBORDecodeException {
             BigInteger length = readUnsignedArgument(additionalInformation);
 
             if (length.bitLength() > 31) {
@@ -502,9 +500,13 @@ public final class CBORDecoder {
 
             int size = length.intValue();
 
-            long maxByteStringLength = getMaxByteStringLength();
-            if (maxByteStringLength > -1 && size > maxByteStringLength) {
-                error("Maximum CBOR byte string length of " + maxByteStringLength + " exceeded : " + size);
+            if (maxByteStringLength > -1 && (previousChunkLength > maxByteStringLength
+                    || size > maxByteStringLength - previousChunkLength)) {
+                error("Maximum CBOR string byte length of " + maxByteStringLength + " exceeded");
+            }
+
+            if (previousChunkLength > Integer.MAX_VALUE - (long) size) {
+                error("CBOR string exceeds the maximum supported Java array size");
             }
 
             byte[] result = new byte[size];
@@ -563,11 +565,13 @@ public final class CBORDecoder {
         }
 
         String readTextString(int additionalInformation) throws CBORDecodeException {
+            long maxByteStringLength = getMaxByteStringLength();
             if (additionalInformation != 31) {
-                return decodeUtf8(readDefiniteByteString(additionalInformation));
+                return decodeUtf8(readDefiniteByteString(additionalInformation, maxByteStringLength, 0));
             }
 
             StringBuilder result = new StringBuilder();
+            long totalLength = 0;
 
             while (peek() != 0xff) {
                 int initial = read();
@@ -578,7 +582,7 @@ public final class CBORDecoder {
                     error("Indefinite text string contains an invalid chunk");
                 }
 
-                byte[] chunk = readDefiniteByteString(chunkAdditionalInformation);
+                byte[] chunk = readDefiniteByteString(chunkAdditionalInformation, maxByteStringLength, totalLength);
 
                 /*
                  * Each text-string chunk is itself a text string and therefore must
@@ -586,6 +590,7 @@ public final class CBORDecoder {
                  * malformed UTF-8 from being hidden across chunk boundaries.
                  */
                 result.append(decodeUtf8(chunk));
+                totalLength += chunk.length;
             }
 
             readBreak();
