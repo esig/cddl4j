@@ -19,6 +19,7 @@ package eu.europa.ec.digit.cddl4j.cbor;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
+import java.math.BigInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -102,7 +103,9 @@ class CBORInspectorTest {
 
     @Test
     void readTagReadsEightByteTagArgument() throws Exception {
-        ByteArrayInputStream input = new ByteArrayInputStream(new byte[] { (byte) 0xdb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01 });
+        ByteArrayInputStream input = new ByteArrayInputStream(new byte[] {
+                (byte) 0xdb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01
+        });
 
         CBORInspector inspector = new CBORInspector(input);
 
@@ -111,6 +114,36 @@ class CBORInspectorTest {
         assertEquals(256, inspector.readTag(initialByte));
         assertEquals(0x01, input.read());
         assertEquals(-1, input.read());
+    }
+
+    @Test
+    void readTagBigIntegerSupportsFullUnsigned64BitRange() throws Exception {
+        ByteArrayInputStream input = new ByteArrayInputStream(new byte[] {
+                (byte) 0xdb,
+                (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff,
+                (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff,
+                0x01
+        });
+
+        CBORInspector inspector = new CBORInspector(input);
+
+        assertEquals(
+                new BigInteger("18446744073709551615"),
+                inspector.readTagBigInteger(inspector.read()));
+        assertEquals(0x01, input.read());
+        assertEquals(-1, input.read());
+    }
+
+    @Test
+    void readTagLongRejectsTagsOutsideSignedRange() {
+        CBORInspector inspector = new CBORInspector(new ByteArrayInputStream(new byte[] {
+                (byte) 0xdb,
+                (byte) 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        }));
+
+        assertThrows(
+                CBORDecodeException.class,
+                () -> inspector.readTag(inspector.read()));
     }
 
     @Test
@@ -180,7 +213,9 @@ class CBORInspectorTest {
 
     @Test
     void readLengthReadsEightByteLength() throws Exception {
-        ByteArrayInputStream input = new ByteArrayInputStream(new byte[] { 0x1b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01 });
+        ByteArrayInputStream input = new ByteArrayInputStream(new byte[] {
+                0x1b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01
+        });
 
         CBORInspector inspector = new CBORInspector(input);
 

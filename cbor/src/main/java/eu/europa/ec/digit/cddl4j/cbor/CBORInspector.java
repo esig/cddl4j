@@ -84,18 +84,37 @@ public final class CBORInspector {
      * @param initialByte the previously consumed CBOR initial byte
      * @return the tag number
      * @throws CBORDecodeException if the initial byte does not represent a
-     *     CBOR tag or if the tag number is malformed
+     *     CBOR tag, the tag number is malformed, or it exceeds {@link Long#MAX_VALUE};
+     *     use {@link #readTagBigInteger(int)} for the full unsigned 64-bit range
      */
     public long readTag(int initialByte) throws CBORDecodeException {
+        BigInteger tag = readTagBigInteger(initialByte);
+
+        if (tag.bitLength() > 63) {
+            throw new CBORDecodeException(
+                    "CBOR tag exceeds signed long range; use #readTagBigInteger(int)");
+        }
+
+        return tag.longValue();
+    }
+
+    /**
+     * Reads a tag number across the complete unsigned 64-bit CBOR range.
+     *
+     * <p>Use this method when the tag may exceed {@link Long#MAX_VALUE}.
+     * The initial byte must already have been consumed by {@link #read()}.
+     *
+     * @param initialByte the previously consumed CBOR initial byte
+     * @return the tag number as a non-negative integer
+     * @throws CBORDecodeException if the initial byte is not a tag or the
+     *     encoded tag number is malformed
+     */
+    public BigInteger readTagBigInteger(int initialByte) throws CBORDecodeException {
         if (CBORMajorType.fromInitialByte(initialByte) != CBORMajorType.TAG) {
             throw new CBORDecodeException("Expected CBOR tag");
         }
 
-        BigInteger tag = reader.readUnsignedArgument(initialByte & 0x1f);
-        if (tag.bitLength() > 63) {
-            throw new CBORDecodeException("CBOR tag is too large");
-        }
-        return tag.longValue();
+        return reader.readUnsignedArgument(initialByte & 0x1f);
     }
 
     /**
