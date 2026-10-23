@@ -21,6 +21,9 @@ import eu.europa.ec.digit.cddl4j.validator.CddlParseException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,19 +34,27 @@ import java.util.Objects;
  *
  * <p>Produces a flat list of {@link Token}s. Comments ({@code ;} to EOL)
  * and all whitespace are silently dropped.
+ *
+ * <p>Text literals use CDDL's JSON-style escapes. Unsupported escapes,
+ * unescaped control characters, invalid Unicode escapes, and malformed UTF-8
+ * source bytes are rejected rather than silently rewritten.
+ *
+ * <p>Numeric tokens use ASCII digits and accept decimal, hexadecimal, and
+ * binary integer forms. Invalid or incomplete forms are rejected during
+ * tokenization so they cannot be reinterpreted as adjacent tokens.
  */
 public final class CddlTokenizer {
 
-    /** Original string containing CBOR content */
-    private final String  src;
+    /** Original string containing CDDL source. */
+    private final String src;
 
-    /** Current reading position */
+    /** Current reading position. */
     private int pos;
 
-    /** Current reading line */
+    /** Current reading line. */
     private int line;
 
-    /** Current reading column */
+    /** Current reading column. */
     private int col;
 
     /**
@@ -53,10 +64,10 @@ public final class CddlTokenizer {
      * @throws NullPointerException if {@code src} is null
      */
     public CddlTokenizer(String src) {
-        this.src  = src;
-        this.pos  = 0;
+        this.src = Objects.requireNonNull(src, "src");
+        this.pos = 0;
         this.line = 1;
-        this.col  = 1;
+        this.col = 1;
     }
 
     /**
@@ -64,6 +75,7 @@ public final class CddlTokenizer {
      *
      * @param src the UTF-8 encoded CDDL source
      * @throws NullPointerException if {@code src} is null
+     * @throws CddlParseException if the source is not valid UTF-8
      */
     public CddlTokenizer(byte[] src) {
         this(decodeUtf8(Objects.requireNonNull(src, "CDDL source is null")));
@@ -79,7 +91,7 @@ public final class CddlTokenizer {
      *
      * @param src the input stream containing UTF-8 encoded CDDL source
      * @throws NullPointerException if {@code src} is null
-     * @throws CddlParseException if the source cannot be read
+     * @throws CddlParseException if the source is not valid UTF-8 or cannot be read
      */
     public CddlTokenizer(InputStream src) {
         // TODO: Tokenize directly from the stream to avoid materializing the entire source.
@@ -91,7 +103,8 @@ public final class CddlTokenizer {
      * Tokenizes the complete source.
      *
      * @return the lexical tokens, including a final EOF token
-     * @throws CddlParseException if the source contains an invalid character
+     * @throws CddlParseException if the source contains invalid syntax or an
+     *     invalid text literal
      */
     public List<Token> tokenize() {
         List<Token> tokens = new ArrayList<>();
@@ -121,7 +134,7 @@ public final class CddlTokenizer {
         }
 
         // --- Numbers ---
-        if (Character.isDigit(c) || (c == '-' && pos + 1 < src.length() && Character.isDigit(src.charAt(pos + 1)))) {
+        if (isDecimalDigit(c) || (c == '-' && pos + 1 < src.length() && isDecimalDigit(src.charAt(pos + 1)))) {
             return readNumber(startLine, startCol);
         }
 
@@ -209,7 +222,7 @@ public final class CddlTokenizer {
                 }
                 // Control operator: .size, .regexp, etc.
                 StringBuilder ctrlOp = new StringBuilder(".");
-                while (pos < src.length() && (Character.isLetterOrDigit(peek()) || peek() == '-')) {
+                while (pos < src.length() && (isAsciiLetterOrDigit(peek()) || peek() == '-')) {
                     ctrlOp.append(advance());
                 }
                 return token(TokenType.CTRL_OP, ctrlOp.toString(), startLine, startCol);
@@ -267,44 +280,91 @@ public final class CddlTokenizer {
             sb.append(advance());
         }
 
+        boolean prefixedInteger = false;
         if (peek() == '0' && pos + 1 < src.length()
                 && (src.charAt(pos + 1) == 'x' || src.charAt(pos + 1) == 'X')) {
-            // TODO: Add CDDL binary and hexadecimal floating-point number forms.
-            // Keep the current decimal/hex-integer subset explicit until those forms have dedicated parsing rules.
-            // Hex integer
-            sb.append(advance()); // '0'
-            sb.append(advance()); // 'x' or 'X'
+            // TODO: Add CDDL hexadecimal floating-point number forms.
+            // Keep the integer subset explicit until those forms have dedicated parsing rules.
+            sb.append(advance());
+            sb.append(advance());
+            prefixedInteger = true;
+            int firstDigit = sb.length();
             while (pos < src.length() && isHexDigit(peek())) {
                 sb.append(advance());
             }
+            if (sb.length() == firstDigit) {
+                throw new CddlParseException("Hexadecimal integer requires at least one digit", startLine, startCol);
+            }
+            rejectPrefixedIntegerSuffix("hexadecimal", startLine, startCol);
+        } else if (peek() == '0' && pos + 1 < src.length()
+                && (src.charAt(pos + 1) == 'b' || src.charAt(pos + 1) == 'B')) {
+            sb.append(advance());
+            sb.append(advance());
+            prefixedInteger = true;
+            int firstDigit = sb.length();
+            while (pos < src.length() && (peek() == '0' || peek() == '1')) {
+                sb.append(advance());
+            }
+            if (sb.length() == firstDigit) {
+                throw new CddlParseException("Binary integer requires at least one digit", startLine, startCol);
+            }
+            rejectPrefixedIntegerSuffix("binary", startLine, startCol);
         } else {
             // Decimal integer or float
-            while (pos < src.length() && Character.isDigit(peek())) sb.append(advance());
+            while (pos < src.length() && isDecimalDigit(peek())) {
+                sb.append(advance());
+            }
             if (pos < src.length() && peek() == '.') {
                 // Could be a range operator — peek ahead
-                if (pos + 1 < src.length() && Character.isDigit(src.charAt(pos + 1))) {
+                if (pos + 1 < src.length() && isDecimalDigit(src.charAt(pos + 1))) {
                     isFloat = true;
                     sb.append(advance()); // '.'
-                    while (pos < src.length() && Character.isDigit(peek())) {
+                    while (pos < src.length() && isDecimalDigit(peek())) {
                         sb.append(advance());
                     }
                 }
                 // else leave '.' for the operator reader
             }
-            if (!isFloat && pos < src.length() && (peek() == 'e' || peek() == 'E')) {
+            if (pos < src.length() && (peek() == 'e' || peek() == 'E')) {
                 isFloat = true;
                 sb.append(advance());
                 if (pos < src.length() && (peek() == '+' || peek() == '-')) {
                     sb.append(advance());
                 }
-                while (pos < src.length() && Character.isDigit(peek())) {
+                int exponentDigitStart = sb.length();
+                while (pos < src.length() && isDecimalDigit(peek())) {
                     sb.append(advance());
                 }
+                if (sb.length() == exponentDigitStart) {
+                    throw new CddlParseException("Exponent requires at least one digit", startLine, startCol);
+                }
+            }
+
+            // In #6.0xNN and #6.0bNN, the radix prefix follows the decimal-looking major-type token.
+            if (pos < src.length() && isIdentifierContinuation(peek())
+                    && !("6.0".contentEquals(sb)
+                    && (peek() == 'x' || peek() == 'X' || peek() == 'b' || peek() == 'B'))) {
+                throw new CddlParseException("Invalid character after numeric literal", startLine, startCol);
+            }
+        }
+
+        if (!prefixedInteger) {
+            int firstDigit = sb.charAt(0) == '-' ? 1 : 0;
+            if (firstDigit + 1 < sb.length() && sb.charAt(firstDigit) == '0'
+                    && isDecimalDigit(sb.charAt(firstDigit + 1))) {
+                throw new CddlParseException("Decimal numbers must not contain leading zeroes", startLine, startCol);
             }
         }
 
         TokenType tt = isFloat ? TokenType.NUMBER_FLOAT : TokenType.NUMBER_INT;
         return token(tt, sb.toString(), startLine, startCol);
+    }
+
+    /** Rejects suffixes that would otherwise split a malformed prefixed integer into adjacent tokens. */
+    private void rejectPrefixedIntegerSuffix(String radix, int startLine, int startCol) {
+        if (pos < src.length() && isIdentifierContinuation(peek())) {
+            throw new CddlParseException("Invalid character after " + radix + " integer", startLine, startCol);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -316,7 +376,11 @@ public final class CddlTokenizer {
         StringBuilder sb = new StringBuilder();
         while (pos < src.length() && peek() != '"') {
             char c = advance();
-            if (c == '\\' && pos < src.length()) {
+            if (c == '\\') {
+                if (pos >= src.length()) {
+                    throw new CddlParseException("Unterminated escape sequence", startLine, startCol);
+                }
+
                 char esc = advance();
                 switch (esc) {
                     case '"':
@@ -347,10 +411,18 @@ public final class CddlTokenizer {
                         sb.append(readUnicode(startLine, startCol));
                         break;
                     default:
-                        sb.append(esc);
-                        break;
+                        throw new CddlParseException(
+                                "Invalid text-string escape: \\" + esc,
+                                startLine,
+                                startCol);
                 }
             } else {
+                if (c < 0x20) {
+                    throw new CddlParseException(
+                            "Unescaped control character in text string",
+                            startLine,
+                            startCol);
+                }
                 sb.append(c);
             }
         }
@@ -366,7 +438,11 @@ public final class CddlTokenizer {
             throw new CddlParseException("Invalid unicode escape", startLine, startCol);
         }
         String hex = "" + advance() + advance() + advance() + advance();
-        return (char) Integer.parseInt(hex, 16);
+        try {
+            return (char) Integer.parseInt(hex, 16);
+        } catch (NumberFormatException exception) {
+            throw new CddlParseException("Invalid unicode escape", startLine, startCol);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -412,11 +488,27 @@ public final class CddlTokenizer {
     }
 
     private static boolean isIdentStart(char c) {
-        return Character.isLetter(c) || c == '_' || c == '$' || c == '@';
+        return isAsciiLetter(c) || c == '_' || c == '$' || c == '@';
     }
 
     private static boolean isIdentPart(char c) {
-        return Character.isLetterOrDigit(c) || c == '_' || c == '-' || c == '.' || c == '@' || c == '$';
+        return isAsciiLetterOrDigit(c) || c == '_' || c == '-' || c == '.' || c == '@' || c == '$';
+    }
+
+    private static boolean isAsciiLetterOrDigit(char c) {
+        return isAsciiLetter(c) || isDecimalDigit(c);
+    }
+
+    private static boolean isIdentifierContinuation(char c) {
+        return isAsciiLetterOrDigit(c) || c == '_' || c == '$' || c == '@';
+    }
+
+    private static boolean isAsciiLetter(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    }
+
+    private static boolean isDecimalDigit(char c) {
+        return c >= '0' && c <= '9';
     }
 
     private static boolean isHexDigit(char c) {
@@ -434,7 +526,15 @@ public final class CddlTokenizer {
      * @return decoded CDDL source text
      */
     private static String decodeUtf8(byte[] data) {
-        return new String(data, StandardCharsets.UTF_8);
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(data))
+                    .toString();
+        } catch (CharacterCodingException exception) {
+            throw new CddlParseException("CDDL source is not valid UTF-8", exception);
+        }
     }
 
     /**
@@ -460,9 +560,12 @@ public final class CddlTokenizer {
                 output.write(buffer, 0, count);
             }
         } catch (IOException exception) {
-            throw new CddlParseException("Unable to read CDDL source: " + exception.getMessage());
+            throw new CddlParseException(
+                    "Unable to read CDDL source: " + exception.getMessage(),
+                    exception);
         }
         return decodeUtf8(output.toByteArray());
     }
 
 }
+

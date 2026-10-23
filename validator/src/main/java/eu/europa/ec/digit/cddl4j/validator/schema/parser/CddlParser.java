@@ -306,7 +306,7 @@ public final class CddlParser {
         switch (tok.getType()) {
             case NUMBER_INT:
                 advance();
-                return LiteralType.ofInt(parseInteger(tok.getValue()));
+                return LiteralType.ofInt(parseInteger(tok));
 
             case NUMBER_FLOAT:
                 advance();
@@ -815,7 +815,8 @@ public final class CddlParser {
 
         // #6.1(type) may be tokenized as NUMBER_FLOAT("6.1").
         if (peek().is(TokenType.NUMBER_FLOAT)) {
-            String value = advance().getValue();
+            Token number = advance();
+            String value = number.getValue();
 
             int dotIndex = value.indexOf('.');
             if (dotIndex <= 0 || dotIndex == value.length() - 1) {
@@ -827,10 +828,18 @@ public final class CddlParser {
 
             try {
                 majorType = Integer.parseInt(value.substring(0, dotIndex));
-                argument = new BigInteger(value.substring(dotIndex + 1));
             } catch (NumberFormatException exception) {
-                throw new CddlParseException("Invalid CBOR major-type selector: " + value);
+                throw new CddlParseException("Invalid CBOR major-type selector: " + value,
+                        number.getLine(), number.getColumn());
             }
+
+            String argumentValue = value.substring(dotIndex + 1);
+            // The lexer reads #6.0xNN as NUMBER_FLOAT("6.0") followed by IDENT("xNN").
+            if (majorType == 6 && "0".equals(argumentValue) && peek().is(TokenType.IDENT)
+                    && areAdjacent(number, peek()) && isRadixPrefix(peek().getValue())) {
+                argumentValue += advance().getValue();
+            }
+            argument = parseCborTagNumber(argumentValue, number);
 
             return parseTaggedContent(majorType, argument);
         }
@@ -843,18 +852,15 @@ public final class CddlParser {
                 BigInteger tagNumber = TaggedType.ANY_TAG;
 
                 if (peek().is(TokenType.CTRL_OP)) {
-                    String suffix = advance().getValue();
+                    Token suffixToken = advance();
+                    String suffix = suffixToken.getValue();
 
                     if (!suffix.startsWith(".") || suffix.length() == 1) {
-                        throw new CddlParseException("Invalid CBOR tag number: " + suffix);
+                        throw new CddlParseException("Invalid CBOR tag number: " + suffix,
+                                suffixToken.getLine(), suffixToken.getColumn());
                     }
 
-                    try {
-                        tagNumber = new BigInteger(suffix.substring(1));
-                    } catch (NumberFormatException exception) {
-                        throw new CddlParseException(
-                                "Invalid CBOR tag number: " + suffix);
-                    }
+                    tagNumber = parseCborTagNumber(suffix.substring(1), suffixToken);
                 }
 
                 return parseTaggedContent(majorType, tagNumber);
@@ -944,7 +950,7 @@ public final class CddlParser {
 
         if (peek().is(TokenType.NUMBER_INT) && peekAt(1).is(TokenType.STAR)
                 && areAdjacent(peek(), peekAt(1))) {
-            int lo = (int) Long.parseLong(advance().getValue());
+            int lo = parseOccurrenceBound(advance(), false);
             Token star = advance();
             return parseStarOccur(lo, star);
         }
@@ -966,7 +972,7 @@ public final class CddlParser {
      */
     private int[] parseStarOccur(int min, Token star) {
         if (peek().is(TokenType.NUMBER_INT) && areAdjacent(star, peek())) {
-            int max = (int) Long.parseLong(advance().getValue());
+            int max = parseOccurrenceBound(advance(), true);
             return new int[]{ min, max };
         }
 
@@ -1017,11 +1023,105 @@ public final class CddlParser {
         return advance();
     }
 
-    private static BigInteger parseInteger(String s) {
-        if (s.startsWith("0x") || s.startsWith("0X")) {
-            return new BigInteger(s.substring(2), 16);
+    /**
+     * Parses a CDDL integer literal and preserves source location in diagnostics.
+     *
+     * @param token {@link Token}
+     * @return {@link BigInteger}
+     */
+    private static BigInteger parseInteger(Token token) {
+        try {
+            return parseIntegerValue(token.getValue());
+        } catch (NumberFormatException exception) {
+            throw new CddlParseException(
+                    "Invalid integer literal: " + token.getValue(), token.getLine(), token.getColumn());
         }
-        return new BigInteger(s);
+    }
+
+    /**
+     * Parses a non-negative CDDL uint, including decimal, hexadecimal, and binary notation.
+     *
+     * @param value {@link String}
+     * @param token {@link Token}
+     * @param description {@link String}
+     * @return {@link BigInteger}
+     */
+    private static BigInteger parseUnsignedInteger(String value, Token token, String description) {
+        BigInteger result;
+        try {
+            result = parseIntegerValue(value);
+        } catch (NumberFormatException exception) {
+            throw new CddlParseException("Invalid " + description + ": " + value, token.getLine(), token.getColumn());
+        }
+        if (result.signum() < 0) {
+            throw new CddlParseException(description + " must not be negative: " + value,
+                    token.getLine(), token.getColumn());
+        }
+        return result;
+    }
+
+    /**
+     * Parses a CDDL tag number and enforces CBOR's unsigned 64-bit tag range.
+     *
+     * @param value {@link String}
+     * @param token {@link Token}
+     * @return {@link BigInteger}
+     */
+    private static BigInteger parseCborTagNumber(String value, Token token) {
+        BigInteger tagNumber = parseUnsignedInteger(value, token, "CBOR tag number");
+        if (tagNumber.bitLength() > 64) {
+            throw new CddlParseException("CBOR tag number exceeds unsigned 64-bit range: " + value,
+                    token.getLine(), token.getColumn());
+        }
+        return tagNumber;
+    }
+
+    /**
+     * Parses a numeric literal while preserving its sign for prefixed forms.
+     *
+     * @param value {@link String}
+     * @return {@link BigInteger}
+     */
+    private static BigInteger parseIntegerValue(String value) {
+        boolean negative = value.startsWith("-");
+        int prefixOffset = negative ? 1 : 0;
+        int radix = 10;
+        int digitsOffset = prefixOffset;
+
+        if (value.startsWith("0x", prefixOffset) || value.startsWith("0X", prefixOffset)) {
+            radix = 16;
+            digitsOffset += 2;
+        } else if (value.startsWith("0b", prefixOffset) || value.startsWith("0B", prefixOffset)) {
+            radix = 2;
+            digitsOffset += 2;
+        }
+
+        BigInteger parsed = new BigInteger(value.substring(digitsOffset), radix);
+        return negative ? parsed.negate() : parsed;
+    }
+
+    /**
+     * Parses an occurrence bound and rejects values that cannot be represented by the schema model.
+     *
+     * @param token {@link Token}
+     * @param upperBound boolean
+     * @return integer
+     */
+    private static int parseOccurrenceBound(Token token, boolean upperBound) {
+        BigInteger value = parseUnsignedInteger(token.getValue(), token, "occurrence bound");
+        BigInteger maximum = BigInteger.valueOf(Integer.MAX_VALUE);
+        int comparison = value.compareTo(maximum);
+        if (comparison > 0 || (upperBound && comparison == 0)) {
+            throw new CddlParseException("Occurrence bound is too large: " + token.getValue(),
+                    token.getLine(), token.getColumn());
+        }
+        return value.intValue();
+    }
+
+    private static boolean isRadixPrefix(String identifier) {
+        return identifier.length() > 1
+                && (identifier.charAt(0) == 'x' || identifier.charAt(0) == 'X'
+                || identifier.charAt(0) == 'b' || identifier.charAt(0) == 'B');
     }
 
     private static byte[] hexToBytes(String hex, Token tok) {
