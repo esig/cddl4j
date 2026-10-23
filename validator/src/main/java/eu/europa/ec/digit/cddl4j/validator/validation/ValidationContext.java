@@ -173,7 +173,7 @@ public final class ValidationContext {
      */
     public boolean isInRecursion(String ruleName) {
         Objects.requireNonNull(ruleName, "ruleName");
-        return recursionGuard.contains(ruleName);
+        return recursionGuard.contains(recursionKey(ruleName));
     }
 
     /**
@@ -188,7 +188,7 @@ public final class ValidationContext {
     public ValidationContext enterRule(String ruleName) {
         Objects.requireNonNull(ruleName, "ruleName");
         Set<String> next = new HashSet<>(recursionGuard);
-        next.add(ruleName);
+        next.add(recursionKey(ruleName));
         return new ValidationContext(ruleSet, controlOperators, instancePath, next);
     }
 
@@ -205,8 +205,12 @@ public final class ValidationContext {
     public ValidationContext leaveRule(String ruleName) {
         Objects.requireNonNull(ruleName, "ruleName");
         Set<String> next = new HashSet<>(recursionGuard);
-        next.remove(ruleName);
+        next.remove(recursionKey(ruleName));
         return new ValidationContext(ruleSet, controlOperators, instancePath, next);
+    }
+
+    private String recursionKey(String ruleName) {
+        return ruleName.length() + ":" + ruleName + instancePath;
     }
 
 }

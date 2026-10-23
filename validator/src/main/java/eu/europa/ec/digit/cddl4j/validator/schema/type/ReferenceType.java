@@ -84,8 +84,7 @@ public final class ReferenceType extends CddlType {
     public ValidationResult validate(CBORValue value, ValidationContext ctx) {
         // Guard against zero-progress recursion in self-referential schemas.
         if (ctx.isInRecursion(ruleName)) {
-            // Treat any value as valid to break the cycle.
-            return ValidationResult.success(); // TODO : review
+            return fail(ctx, "Recursive reference to '" + ruleName + "' makes no progress");
         }
 
         CddlType target = ctx.resolveRule(ruleName);

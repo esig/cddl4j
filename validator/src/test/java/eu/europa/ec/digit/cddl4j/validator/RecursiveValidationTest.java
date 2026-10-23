@@ -96,6 +96,28 @@ class RecursiveValidationTest {
     }
 
     @Test
+    void zeroProgressRecursionDoesNotAcceptArbitraryValues() {
+        CddlSchema schema = CddlValidator.loadSchema("root = root");
+
+        assertInvalid(schema, CBOR.value(42));
+    }
+
+    @Test
+    void zeroProgressMutualRecursionFails() {
+        CddlSchema schema = CddlValidator.loadSchema("first = second\nsecond = first");
+
+        assertInvalid(schema, CBOR.value(42));
+    }
+
+    @Test
+    void zeroProgressRecursiveChoiceCanMatchLaterAlternative() {
+        CddlSchema schema = CddlValidator.loadSchema("root = root / uint");
+
+        assertValid(schema, CBOR.value(42));
+        assertInvalid(schema, CBOR.value("not an integer"));
+    }
+
+    @Test
     void recursiveTreeAcceptsLeaf() {
         CddlSchema schema = CddlValidator.loadSchema(
                 "tree = uint / { value: uint, children: [* tree] }");
