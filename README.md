@@ -311,8 +311,9 @@ the regular in-memory representation. Encoded output is always emitted using def
 The decoder rejects malformed input including truncated items, reserved additional-information values, invalid UTF-8,
 invalid indefinite-length chunks, trailing bytes after the first data item, and duplicate map keys.
 
-> Currently **CBORDecoder** processes exactly one CBOR data item. If trailing bytes remain, 
-> including when a sequence of CBOR data items is passed, the value is rejected.
+The implementation includes a recursion guard against stack exhaustion, allowing to set a maximum nesting level of the
+embedded CBOR structures. The default limit is set to 32-levels and may be configured through the System property
+`"eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth"`.
 
 Duplicate map keys are rejected rather than silently overwriting one another. This follows the CBOR validity model and is
 particularly useful when validating untrusted protocol input.

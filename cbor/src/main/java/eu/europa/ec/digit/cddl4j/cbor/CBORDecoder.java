@@ -40,8 +40,21 @@ import java.util.Objects;
  * are invalid CBOR map data for purposes of generic validity checking.
  *
  * <p>Only one top-level data item is accepted by the decode methods.
+ *
+ * <p>To prevent deeply nested untrusted input from exhausting the Java call
+ * stack, decoding is limited to a pre-defined maximum number of nested data items.
+ * This is an implementation resource limit, not a restriction imposed by CBOR.
+ * By default, the value is 32. Can be configured with a System property
+ * {@code eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth}.
+ * Negative values are treated as no limit.
+ *
+ * <p>The decoder does not impose a total input-size or item-count limit.
+ * Callers decoding untrusted streams should enforce an input budget.
  */
 public final class CBORDecoder {
+
+    /** Maximum nested CBOR data items accepted to prevent stack exhaustion. */
+    private static final int DEFAULT_MAX_NESTING_DEPTH = 32;
 
     /**
      * Default constructor.
@@ -55,9 +68,10 @@ public final class CBORDecoder {
      *
      * @param data the encoded CBOR data
      * @return the decoded CBOR value
-     * @throws CBORDecodeException if the input is null, truncated, malformed,
+     * @throws NullPointerException if {@code data} is {@code null}
+     * @throws CBORDecodeException if the input is truncated, malformed,
      *     contains invalid UTF-8, contains duplicate map keys, or contains
-     *     trailing bytes
+     *     trailing bytes, or exceeds the supported nesting depth
      */
     public static CBORValue decode(byte[] data) throws CBORDecodeException {
         Objects.requireNonNull(data, "Input is null");
@@ -73,9 +87,10 @@ public final class CBORDecoder {
      *
      * @param input the stream containing encoded CBOR data
      * @return the decoded CBOR value
-     * @throws CBORDecodeException if the input is null, truncated, malformed,
+     * @throws NullPointerException if {@code input} is {@code null}
+     * @throws CBORDecodeException if the input is truncated, malformed,
      *     contains invalid UTF-8, contains duplicate map keys, or contains
-     *     trailing bytes
+     *     trailing bytes, or exceeds the supported nesting depth
      */
     public static CBORValue decode(InputStream input) throws CBORDecodeException {
         Reader reader = new Reader(input);
@@ -295,7 +310,23 @@ public final class CBORDecoder {
             return position > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) position;
         }
 
+        /**
+         * Reads one complete CBOR data item.
+         *
+         * @return the decoded data item
+         * @throws CBORDecodeException if the item is malformed or exceeds the
+         *     supported nesting depth
+         */
         CBORValue readValue() throws CBORDecodeException {
+            return readValue(0);
+        }
+
+        private CBORValue readValue(int depth) throws CBORDecodeException {
+            int maxNestingDepth = getMaxNestingDepth();
+            if (maxNestingDepth > -1 && depth > maxNestingDepth) {
+                error("Maximum CBOR nesting depth of " + maxNestingDepth + " exceeded");
+            }
+
             int initial = read();
             CBORMajorType majorType = CBORMajorType.fromInitialByte(initial);
             int additionalInformation = initial & 0x1f;
@@ -318,13 +349,13 @@ public final class CBORDecoder {
                     return CBORValue.scalar(CBORType.TEXT_STRING, readTextString(additionalInformation));
 
                 case ARRAY:
-                    return readArray(additionalInformation);
+                    return readArray(additionalInformation, depth);
 
                 case MAP:
-                    return readMap(additionalInformation);
+                    return readMap(additionalInformation, depth);
 
                 case TAG:
-                    return readTag(additionalInformation);
+                    return readTag(additionalInformation, depth);
 
                 case SPECIAL:
                     return readSimpleValue(additionalInformation);
@@ -335,14 +366,29 @@ public final class CBORDecoder {
             throw new IllegalStateException("Illegal state has been reached");
         }
 
+        private int getMaxNestingDepth() {
+            int maxNestingDepth = DEFAULT_MAX_NESTING_DEPTH;
+            String definedMaxNestingDepth = System.getProperty("eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth");
+            if (definedMaxNestingDepth != null) {
+                try {
+                    maxNestingDepth = Integer.parseInt(definedMaxNestingDepth);
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException(String.format(
+                            "Invalid eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth: %s. Reason : %s",
+                            definedMaxNestingDepth, e.getMessage()));
+                }
+            }
+            return maxNestingDepth;
+        }
+
         boolean isIndefiniteLengthAllowed(CBORMajorType majorType) {
             return CBORMajorType.BYTE_STRING == majorType || CBORMajorType.TEXT_STRING == majorType
                     || CBORMajorType.ARRAY == majorType || CBORMajorType.MAP == majorType;
         }
 
-        CBORValue readTag(int additionalInformation) throws CBORDecodeException {
+        CBORValue readTag(int additionalInformation, int depth) throws CBORDecodeException {
             BigInteger tag = readUnsignedArgument(additionalInformation);
-            CBORValue content = readValue();
+            CBORValue content = readValue(depth + 1);
 
             return CBORValue.tag(tag, content);
         }
@@ -520,12 +566,12 @@ public final class CBORDecoder {
             }
         }
 
-        CBORValue readArray(int additionalInformation) throws CBORDecodeException {
+        CBORValue readArray(int additionalInformation, int depth) throws CBORDecodeException {
             CBORValue.CBORArrayEditor builder = CBOR.array();
 
             if (additionalInformation == 31) {
                 while (peek() != 0xff) {
-                    builder.add(readValue());
+                    builder.add(readValue(depth + 1));
                 }
 
                 readBreak();
@@ -541,19 +587,19 @@ public final class CBORDecoder {
             int count = length.intValue();
 
             for (int i = 0; i < count; i++) {
-                builder.add(readValue());
+                builder.add(readValue(depth + 1));
             }
 
             return builder.value();
         }
 
-        CBORValue readMap(int additionalInformation) throws CBORDecodeException {
+        CBORValue readMap(int additionalInformation, int depth) throws CBORDecodeException {
             CBORValue.CBORMapEditor builder = CBOR.map();
 
             if (additionalInformation == 31) {
                 while (peek() != 0xff) {
-                    CBORValue key = readValue();
-                    CBORValue value = readValue();
+                    CBORValue key = readValue(depth + 1);
+                    CBORValue value = readValue(depth + 1);
 
                     putMapEntry(builder, key, value);
                 }
@@ -571,8 +617,8 @@ public final class CBORDecoder {
             int count = length.intValue();
 
             for (int i = 0; i < count; i++) {
-                CBORValue key = readValue();
-                CBORValue value = readValue();
+                CBORValue key = readValue(depth + 1);
+                CBORValue value = readValue(depth + 1);
 
                 putMapEntry(builder, key, value);
             }
