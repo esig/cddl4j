@@ -10,7 +10,7 @@
 - CBOR content parsing;
 - CBOR verification against a CDDL.
 
-It can be used to create or to verify any type of data in CBOR format, such as 
+It can be used to create or to verify any type of data in CBOR format, such as
 [IETF RFC 9052 COSE](https://www.rfc-editor.org/rfc/rfc9052.html), ISO/IEC 18013-5 Mobile driving licence (mDL), etc.
 
 The project contains two modules:
@@ -24,8 +24,8 @@ The project contains two modules:
 ## Project design
 
 - **No runtime third-party dependencies:** the project includes its own CBOR representation and codec.
-- **Immutability:** `CddlValidator` and `CddlSchema` instances are immutable and thread-safe. `CBORValue` objects are 
-  immutable, but CBOR Arrays and CBOR Maps can be edited through explicit editor objects.
+- **Immutability:** `CddlValidator` and `CddlSchema` instances are immutable and thread-safe. `CBORValue` represents
+  scalar and container values; explicit editors provide mutation for arrays and maps.
 - **Extensible:** allows application-defined CDDL rules and custom control operators without changing the library.
 - **Java 8 compatible:** and tested with JDK 26.
 
@@ -60,7 +60,7 @@ if (result.isValid()) {
 }
 ```
 
-Validation errors carry an instance path, message, and nested causes. 
+Validation errors carry an instance path, message, and nested causes.
 
 ## Maven
 
@@ -163,7 +163,7 @@ CddlSchema another = CddlValidator.loadSchema(cddlSource)
 
 `CddlValidator` and `CddlSchema` instances are immutable and **thread-safe**.
 
-`CddlParser` and `CddlTokenizer` are used while loading schemas, and invoked internally during the validation process. 
+`CddlParser` and `CddlTokenizer` are used while loading schemas, and invoked internally during the validation process.
 They are stateful not thread-safe; use a separate instance for concurrent parsing.
 
 ## Validation
@@ -210,7 +210,7 @@ if (!result.isValid()) {
 ```
 
 Paths identify the location in the validated value.
-Composite types such as choices can expose nested causes, 
+Composite types such as choices can expose nested causes,
 so callers can inspect the full reason a value containing an error.
 
 For tests and assertions:
@@ -300,8 +300,8 @@ The in-memory model represents:
 `CBOR.value(Object)` converts the Java value types supported by the library (`CBORValue`, `null`, booleans, integral
 wrapper types, `BigInteger`, `Float`, `Double`, `String`, and `byte[]`) into `CBORValue` instances.
 
-`CBORMapEditor` and `CBORArrayEditor` provide fluent mutation for programmatically building and 
-editing values in maps and arrays, respectively. 
+`CBORMapEditor` and `CBORArrayEditor` provide fluent mutation for programmatically building and
+editing values in maps and arrays, respectively.
 
 Byte string inputs and outputs are defensively copied.
 
@@ -324,17 +324,16 @@ because its equality can change.
 
 ### Safeguards and size limitations
 
-The implementation includes safeguards for processing untrusted CBOR input, with applicable limits enforced by default.
-The following configurations are provided through the System properties:
+The decoder includes configurable safeguards for processing untrusted CBOR input. Limits are enforced by default and can
+be configured through these system properties:
 
-- `eu.europa.ec.digit.cddl4j.cbor.max_byte_string_length` - prevents pre-allocation of a byte array from exceeding VM 
-memory limit for untrusted byte string length inputs. By default, the size of a byte string is limited to `10 MB`. 
-Negative values are treated as no limit.
-- `eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth` - prevents deeply nested untrusted input from exhausting the Java 
-call stack, decoding is limited to a pre-defined maximum number of nested data items. By default, the value is `32`. 
-Negative values are treated as no limit.
+- `eu.europa.ec.digit.cddl4j.cbor.max_byte_string_length` limits the encoded byte length of each CBOR byte or text string,
+  including the combined length of indefinite-string chunks. The default is `10 MiB`. Negative values disable this limit.
+- `eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth` limits nesting to `32` data items by default. Negative values disable
+  this limit.
 
-Currently, there is no total input-size or item-count limit; callers should bound streams when decoding untrusted data.
+The string limit is not a total input-size or item-count limit. Callers decoding untrusted data should also bound the
+input stream.
 
 ### Encoding behavior
 
@@ -345,7 +344,7 @@ Two encoding modes are available:
   floating-point representation that preserves the value, definite lengths, and bytewise lexicographic ordering of
   deterministic map-key encodings.
 
-Deterministic encoding is useful when a document or ptotocol requires a stable CBOR
+Deterministic encoding is useful when a document or protocol requires a stable CBOR
 serialization.
 
 CBOR sequences are also supported as a value helper for applications working with `.cborseq` payloads.
@@ -391,11 +390,11 @@ Known limitations include:
 - **Generic CDDL parameters and arguments** such as `my-type<T>` are not implemented. The current parser treats the name
   as an ordinary reference instead of instantiating a parameterized rule.
 - **Unprefixed byte-string literals** are not implemented. Use `h'...'` or `b64'...'`.
-- **Binary integer literals and hexadecimal floating-point literals** are not implemented; the current literal grammar
-  supports decimal integers, hexadecimal integers, and decimal floating-point forms.
+- **Hexadecimal floating-point literals** are not implemented; integer literals support decimal, hexadecimal, and binary
+  forms, while floating-point literals currently support decimal forms.
 - **Only three built-in control operators** are implemented: `.size`, `.cbor`, and `.cborseq`. Other RFC control operators
   such as `.regexp`, `.bits`, `.cat`, `.det`, `.within`, `.and`, `.lt`, `.le`, `.gt`, `.ge`, `.eq`, `.ne`, and
-  `.default` are not built in. Please note that it is possible to supply your own implementation of these or 
+  `.default` are not built in. Please note that it is possible to supply your own implementation of these or
   other control operators to the validator (see above).
 - **Streaming CDDL tokenization** is not implemented. CDDL input streams are currently materialized before tokenization.
 - **The CBOR in-memory floating-point model uses `double`.** Wire-level deterministic encoding still chooses the shortest
@@ -462,8 +461,8 @@ The library does not attest full compliance with the standards above.
 
 ## Examples in the test suite
 
-The test suite includes schemas and payloads exercising pseudo and real multi level protocol structures, 
-including mdoc and VICAL examples (test samples are provided exclusively for informational purposes, 
+The test suite includes schemas and payloads exercising pseudo and real multi level protocol structures,
+including mdoc and VICAL examples (test samples are provided exclusively for informational purposes,
 compliance with the underlying specifications is not guaranteed).
 
 For the most precise examples of the currently supported syntax, the executable tests under `validator/src/test/java`

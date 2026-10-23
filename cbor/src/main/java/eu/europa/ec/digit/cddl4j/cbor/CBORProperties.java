@@ -24,18 +24,26 @@ public final class CBORProperties {
 
     /* System properties */
 
-    /** Defines maximum byte string length obtained from the untrusted sources */
+    /**
+     * Defines the maximum encoded byte length of each CBOR byte or text string, including indefinite-length chunks.
+     */
     public static final String MAX_BYTE_STRING_LENGTH = "eu.europa.ec.digit.cddl4j.cbor.max_byte_string_length";
 
-    /** Defines maximum number of nesting structure levels */
+    /**
+     * Defines the maximum number of nested CBOR data items.
+     */
     public static final String MAX_NESTING_DEPTH = "eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth";
 
     /* System property defaults */
 
-    /** Default max byte string length is limited to 10 MB */
+    /**
+     * Default maximum encoded length for each byte or text string is 10 MiB.
+     */
     public static final int DEFAULT_MAX_BYTE_STRING_LENGTH = 10 * 1024 * 1024;
 
-    /** Default max nesting depth is limited to 32 levels */
+    /**
+     * Default maximum nesting depth is 32 data items.
+     */
     public static final int DEFAULT_MAX_NESTING_DEPTH = 32;
 
     /**
