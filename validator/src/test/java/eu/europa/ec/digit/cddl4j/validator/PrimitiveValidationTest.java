@@ -539,7 +539,7 @@ class PrimitiveValidationTest {
     void simpleValueIsNotAcceptedAsBoolean() {
         CddlSchema schema = CddlValidator.loadSchema("value = bool");
 
-        assertInvalid(schema, CBOR.simpleValue(20));
+        assertInvalid(schema, CBOR.simpleValue(10));
     }
 
     @Test
