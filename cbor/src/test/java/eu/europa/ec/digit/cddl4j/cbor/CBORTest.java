@@ -181,6 +181,16 @@ class CBORTest {
     }
 
     @Test
+    void truncatedLargeByteStringDoesNotPreallocateDeclaredLength() {
+        byte[] declaredLargeString = {
+                0x5a,
+                0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff
+        };
+
+        assertThrows(CBORDecodeException.class, () -> CBOR.decodeFromBytes(declaredLargeString));
+    }
+
+    @Test
     void rejectsInvalidUtf8() {
         CBORDecodeException exception = assertThrows(CBORDecodeException.class, () ->
                 CBOR.decodeFromBytes(new byte[] { 0x62, (byte) 0xc3, 0x28 }));

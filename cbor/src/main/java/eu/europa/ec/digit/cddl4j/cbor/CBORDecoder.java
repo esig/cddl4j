@@ -41,20 +41,29 @@ import java.util.Objects;
  *
  * <p>Only one top-level data item is accepted by the decode methods.
  *
- * <p>To prevent deeply nested untrusted input from exhausting the Java call
- * stack, decoding is limited to a pre-defined maximum number of nested data items.
- * This is an implementation resource limit, not a restriction imposed by CBOR.
- * By default, the value is 32. Can be configured with a System property
- * {@code eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth}.
- * Negative values are treated as no limit.
+ * <p>For preventing the application on reaching the resource limits,
+ * implementation provides the following  safeguards, configurable with System
+ * properties:
+ * <ul>
+ * <li>{@code eu.europa.ec.digit.cddl4j.cbor.max_byte_string_length} -
+ * prevents pre-allocation of a byte array from exceeding VM memory limit,
+ * for untrusted byte string length inputs.
+ * By default, the size of a byte string is limited to 10 MB.
+ * Negative values are treated as no limit.</li>
+ * <li>{@code eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth} - prevents
+ * deeply nested untrusted input from exhausting the Java call stack, decoding
+ * is limited to a pre-defined maximum number of nested data items.
+ * By default, the value is 32. Negative values are treated as no limit.</li>
+ * </ul>
+ *
+ * <p>NOTE: This is implementations limits, not a restriction imposed by CBOR.
  *
  * <p>The decoder does not impose a total input-size or item-count limit.
  * Callers decoding untrusted streams should enforce an input budget.
  */
 public final class CBORDecoder {
 
-    /** Maximum nested CBOR data items accepted to prevent stack exhaustion. */
-    private static final int DEFAULT_MAX_NESTING_DEPTH = 32;
+    // TODO: Expose caller-configurable item limits for untrusted input.
 
     /**
      * Default constructor.
@@ -367,15 +376,14 @@ public final class CBORDecoder {
         }
 
         private int getMaxNestingDepth() {
-            int maxNestingDepth = DEFAULT_MAX_NESTING_DEPTH;
-            String definedMaxNestingDepth = System.getProperty("eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth");
+            int maxNestingDepth = CBORProperties.DEFAULT_MAX_NESTING_DEPTH;
+            String definedMaxNestingDepth = System.getProperty(CBORProperties.MAX_NESTING_DEPTH);
             if (definedMaxNestingDepth != null) {
                 try {
                     maxNestingDepth = Integer.parseInt(definedMaxNestingDepth);
                 } catch (NumberFormatException e) {
-                    throw new IllegalArgumentException(String.format(
-                            "Invalid eu.europa.ec.digit.cddl4j.cbor.max_nesting_depth: %s. Reason : %s",
-                            definedMaxNestingDepth, e.getMessage()));
+                    throw new IllegalArgumentException(String.format("Invalid %s: %s. Reason : %s",
+                            CBORProperties.MAX_NESTING_DEPTH, definedMaxNestingDepth, e.getMessage()));
                 }
             }
             return maxNestingDepth;
@@ -474,6 +482,14 @@ public final class CBORDecoder {
             return output.toByteArray();
         }
 
+        /**
+         * Reads a definite-length byte string with pre-allocating its declared size.
+         * Verifies the byte string size against the pre-defined limits (default is 10 MB).
+         *
+         * @param additionalInformation the CBOR length encoding
+         * @return the byte-string contents
+         * @throws CBORDecodeException if unable to read the content
+         */
         byte[] readDefiniteByteString(int additionalInformation) throws CBORDecodeException {
             BigInteger length = readUnsignedArgument(additionalInformation);
 
@@ -482,9 +498,29 @@ public final class CBORDecoder {
             }
 
             int size = length.intValue();
+
+            long maxByteStringLength = getMaxByteStringLength();
+            if (maxByteStringLength > -1 && size > maxByteStringLength) {
+                error("Maximum CBOR byte string length of " + maxByteStringLength + " exceeded : " + size);
+            }
+
             byte[] result = new byte[size];
             readFully(result);
             return result;
+        }
+
+        private long getMaxByteStringLength() {
+            long maxByteStringLength = CBORProperties.DEFAULT_MAX_BYTE_STRING_LENGTH;
+            String definedMaxByteStringLength = System.getProperty(CBORProperties.MAX_BYTE_STRING_LENGTH);
+            if (definedMaxByteStringLength != null) {
+                try {
+                    maxByteStringLength = Long.parseLong(definedMaxByteStringLength);
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException(String.format("Invalid %s: %s. Reason : %s",
+                            CBORProperties.MAX_BYTE_STRING_LENGTH, definedMaxByteStringLength, e.getMessage()));
+                }
+            }
+            return maxByteStringLength;
         }
 
         /**
